@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Clan</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        discord: {
+                            brand: '#5865F2',
+                            brandHover: '#4752C4',
+                            green: '#248046',
+                            greenHover: '#1a6535',
+                            yellow: '#FEE75C',
+                            red: '#DA373C',
+                            redHover: '#A92B2F',
+                            darkest: '#1e1f22',
+                            dark: '#2b2d31',
+                            light: '#313338',
+                            lighter: '#35373c',
+                            input: '#383a40',
+                            voiceGrid: '#111214',
+                            voiceCard: '#2b2d31'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Custom CSS link -->
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body class="bg-discord-darkest text-gray-200 h-screen w-screen overflow-hidden flex flex-col font-sans select-none">
+
+    <!-- ================= TELA DE LOGIN / REGISTRO ================= -->
+    <div id="auth-screen" class="flex-1 flex items-center justify-center bg-[url('https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_bug_brand_5865F2.svg')] bg-no-repeat bg-center bg-[length:500px] bg-opacity-5">
+        <div class="bg-discord-dark p-8 rounded-md shadow-lg w-full max-w-[480px] flex flex-col border border-gray-800">
+            <div class="text-center mb-6">
+                <h2 class="text-2xl font-bold text-white mb-2">Boas-vindas de volta!</h2>
+                <p class="text-gray-400 text-sm">Estamos muito animados em ver você novamente!</p>
+            </div>
+            
+            <div id="auth-error" class="hidden bg-discord-red bg-opacity-20 border border-discord-red text-red-200 text-sm p-3 rounded mb-4">
+                Erro de autenticação.
+            </div>
+            
+            <form id="auth-form" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Nome de Usuário</label>
+                    <input type="text" id="auth-username" required autocomplete="username" class="w-full bg-discord-darkest text-white border border-transparent focus:border-discord-brand p-3 rounded outline-none transition-colors duration-200">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Senha</label>
+                    <input type="password" id="auth-password" required autocomplete="current-password" class="w-full bg-discord-darkest text-white border border-transparent focus:border-discord-brand p-3 rounded outline-none transition-colors duration-200">
+                </div>
+                
+                <button type="submit" id="auth-btn" class="w-full bg-discord-brand hover:bg-discord-brandHover text-white p-3 rounded font-medium transition-colors duration-200">Entrar</button>
+            </form>
+            
+            <div class="mt-4 text-sm text-gray-400 text-center">
+                <span id="auth-toggle-text">Precisando de uma conta?</span>
+                <button id="auth-toggle-btn" class="text-discord-brand hover:underline font-medium ml-1">Registre-se</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= TELA PRINCIPAL (DASHBOARD) ================= -->
+    <div id="app-screen" class="hidden flex-1 flex overflow-hidden">
+        
+        <!-- BARRA LATERAL 1: LISTA DE SERVIDORES -->
+        <div class="w-[72px] bg-discord-darkest flex flex-col items-center py-3 space-y-2 flex-shrink-0 z-20">
+            <!-- Botão Discord Logo (Home / Lista de Servidores) -->
+            <div class="relative group flex items-center justify-center w-12 h-12 rounded-[24px] bg-discord-light text-discord-brand hover:rounded-[16px] hover:bg-discord-brand hover:text-white transition-all duration-200 cursor-pointer" onclick="selectHome()">
+                <div class="absolute left-0 w-1 bg-white rounded-r-md group-hover:h-5 h-0 transition-all duration-200" id="home-indicator"></div>
+                <i data-lucide="message-square" class="w-7 h-7"></i>
+                <!-- Tooltip -->
+                <span class="absolute left-[80px] bg-discord-darkest text-white text-xs font-bold px-3 py-1.5 rounded shadow-lg whitespace-nowrap hidden group-hover:inline z-50 border border-gray-800">Mensagens Diretas</span>
+            </div>
+            
+            <div class="w-8 h-[2px] bg-discord-light rounded my-1"></div>
+            
+            <!-- Lista de Servidores Dinâmica -->
+            <div id="server-list-container" class="flex-1 w-full overflow-y-auto space-y-2 scrollbar-none flex flex-col items-center">
+                <!-- Servidores inseridos dinamicamente aqui -->
+            </div>
+            
+            <div class="w-8 h-[2px] bg-discord-light rounded my-1"></div>
+            
+            <!-- Adicionar Servidor -->
+            <div class="group flex items-center justify-center w-12 h-12 rounded-[24px] bg-discord-light text-discord-green hover:rounded-[16px] hover:bg-discord-green hover:text-white transition-all duration-200 cursor-pointer" onclick="toggleModal('create-server-modal', true)">
+                <i data-lucide="plus" class="w-6 h-6"></i>
+                <span class="absolute left-[80px] bg-discord-darkest text-white text-xs font-bold px-3 py-1.5 rounded shadow-lg whitespace-nowrap hidden group-hover:inline z-50 border border-gray-800">Criar um Servidor</span>
+            </div>
+            
+            <!-- Entrar em Servidor por Código -->
+            <div class="group flex items-center justify-center w-12 h-12 rounded-[24px] bg-discord-light text-discord-brand hover:rounded-[16px] hover:bg-discord-brand hover:text-white transition-all duration-200 cursor-pointer" onclick="toggleModal('join-server-modal', true)">
+                <i data-lucide="compass" class="w-6 h-6"></i>
+                <span class="absolute left-[80px] bg-discord-darkest text-white text-xs font-bold px-3 py-1.5 rounded shadow-lg whitespace-nowrap hidden group-hover:inline z-50 border border-gray-800">Entrar em um Servidor</span>
+            </div>
+        </div>
+
+        <!-- BARRA LATERAL 2: LISTA DE CANAIS -->
+        <div class="w-60 bg-discord-dark flex flex-col flex-shrink-0 z-10 select-none">
+            <!-- Cabeçalho do Servidor -->
+            <div class="h-12 border-b border-discord-darkest flex items-center justify-between px-4 font-bold text-white shadow-sm cursor-pointer hover:bg-discord-light transition-colors duration-200 relative group">
+                <span id="server-header-name" class="truncate">Carregando...</span>
+                <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 group-hover:text-gray-200"></i>
+                
+                <!-- Menu Dropdown do Servidor -->
+                <div class="absolute top-12 left-2 right-2 bg-discord-darkest border border-gray-800 rounded p-1.5 hidden group-hover:block hover:block space-y-1 shadow-2xl z-50">
+                    <button onclick="copyInviteCode()" class="w-full text-left text-discord-brand text-xs font-semibold px-2 py-2 rounded hover:bg-discord-brand hover:text-white transition-colors flex items-center justify-between">
+                        <span>Convidar Pessoas</span>
+                        <i data-lucide="user-plus" class="w-4 h-4"></i>
+                    </button>
+                    <button onclick="toggleModal('create-channel-modal', true)" class="w-full text-left text-gray-300 text-xs font-semibold px-2 py-2 rounded hover:bg-discord-light hover:text-white transition-colors flex items-center justify-between">
+                        <span>Criar Canal</span>
+                        <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Lista de Canais -->
+            <div class="flex-1 overflow-y-auto px-2 py-3 space-y-4">
+                <!-- Seção Canais de Texto -->
+                <div>
+                    <div class="flex items-center justify-between px-1 text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 cursor-default">
+                        <div class="flex items-center space-x-0.5">
+                            <i data-lucide="chevron-down" class="w-3 h-3"></i>
+                            <span>Canais de Texto</span>
+                        </div>
+                        <i data-lucide="plus" class="w-4 h-4 hover:text-white cursor-pointer" onclick="openCreateChannelModal('text')"></i>
+                    </div>
+                    <div id="text-channels-container" class="space-y-0.5">
+                        <!-- Canais de texto dinâmicos -->
+                    </div>
+                </div>
+                
+                <!-- Seção Canais de Voz -->
+                <div>
+                    <div class="flex items-center justify-between px-1 text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 cursor-default">
+                        <div class="flex items-center space-x-0.5">
+                            <i data-lucide="chevron-down" class="w-3 h-3"></i>
+                            <span>Canais de Voz</span>
+                        </div>
+                        <i data-lucide="plus" class="w-4 h-4 hover:text-white cursor-pointer" onclick="openCreateChannelModal('voice')"></i>
+                    </div>
+                    <div id="voice-channels-container" class="space-y-0.5">
+                        <!-- Canais de voz dinâmicos -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- PAINEL DE CONEXÃO DE VOZ (Ativo apenas em call) -->
+            <div id="voice-connection-panel" class="hidden bg-discord-darkest border-b border-gray-800 p-2 flex flex-col space-y-2">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <i data-lucide="wifi" class="w-5 h-5 text-discord-green animate-pulse"></i>
+                        <div class="flex flex-col">
+                            <span class="text-xs font-bold text-discord-green">Voz conectada</span>
+                            <span id="voice-channel-connected-name" class="text-[10px] text-gray-400 truncate w-32">Geral</span>
+                        </div>
+                    </div>
+                    <!-- Botões de Ação Rápida de Voz -->
+                    <div class="flex items-center space-x-1">
+                        <button onclick="toggleMic()" id="panel-btn-mute" class="p-1.5 rounded hover:bg-discord-light text-gray-300 hover:text-white transition-colors" title="Mutar/Desmutar">
+                            <i data-lucide="mic" class="w-4 h-4" id="panel-mic-icon"></i>
+                        </button>
+                        <button onclick="toggleScreenShare()" id="panel-btn-screen" class="p-1.5 rounded hover:bg-discord-light text-gray-300 hover:text-white transition-colors" title="Compartilhar Tela">
+                            <i data-lucide="screen-share" class="w-4 h-4" id="panel-screen-icon"></i>
+                        </button>
+                        <button onclick="disconnectVoice()" class="p-1.5 rounded hover:bg-discord-light text-discord-red hover:text-white transition-colors" title="Desconectar">
+                            <i data-lucide="phone-off" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PAINEL DO USUÁRIO LOGADO -->
+            <div class="h-[52px] bg-[#232428] flex items-center justify-between px-2 flex-shrink-0">
+                <div class="flex items-center space-x-2 overflow-hidden mr-1">
+                    <div id="user-avatar-circle" class="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">
+                        U
+                    </div>
+                    <div class="flex flex-col overflow-hidden">
+                        <span id="user-panel-name" class="text-sm font-bold text-white truncate">Username</span>
+                        <span class="text-[10px] text-gray-400">#Online</span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-0.5 text-gray-400">
+                    <button onclick="toggleMic()" class="p-1.5 hover:bg-discord-light hover:text-white rounded transition-colors" id="btn-user-mute" title="Mutar/Desmutar Microfone">
+                        <i data-lucide="mic" class="w-4 h-4" id="user-mic-icon"></i>
+                    </button>
+                    <button onclick="toggleDeafen()" class="p-1.5 hover:bg-discord-light hover:text-white rounded transition-colors" id="btn-user-deafen" title="Ensurdecer">
+                        <i data-lucide="volume-2" class="w-4 h-4" id="user-deafen-icon"></i>
+                    </button>
+                    <button onclick="logout()" class="p-1.5 hover:bg-discord-light hover:text-discord-red rounded transition-colors" title="Sair da Conta">
+                        <i data-lucide="log-out" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ÁREA CENTRAL DE CONTEÚDO -->
+        <div class="flex-1 flex flex-col bg-discord-light relative min-w-0">
+            
+            <!-- CHAT DE TEXTO (Padrão) -->
+            <div id="chat-container" class="flex-1 flex flex-col min-w-0">
+                <!-- Cabeçalho do Canal -->
+                <div class="h-12 border-b border-discord-darkest flex items-center justify-between px-4 flex-shrink-0 shadow-sm">
+                    <div class="flex items-center space-x-2 text-white font-bold">
+                        <i data-lucide="hash" class="w-6 h-6 text-gray-400"></i>
+                        <span id="chat-header-name">canal-selecionado</span>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <button onclick="toggleVoiceGridMode()" id="btn-go-to-call" class="hidden bg-discord-brand hover:bg-discord-brandHover text-white text-xs px-3 py-1.5 rounded font-medium transition-colors duration-200 flex items-center space-x-1">
+                            <i data-lucide="video" class="w-4 h-4"></i>
+                            <span>Ver Tela de Call</span>
+                        </button>
+                        <i data-lucide="users" class="w-6 h-6 text-gray-400 hover:text-white cursor-pointer" onclick="toggleMemberList()"></i>
+                    </div>
+                </div>
+                
+                <!-- Área de Mensagens + Lista de Membros -->
+                <div class="flex-1 flex min-w-0 overflow-hidden">
+                    <!-- Mensagens -->
+                    <div class="flex-1 flex flex-col min-w-0 bg-discord-light">
+                        <div id="messages-container" class="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+                            <!-- Mensagens dinâmicas -->
+                        </div>
+                        
+                        <!-- Input do Chat -->
+                        <div class="px-4 pb-6 flex-shrink-0">
+                            <form id="chat-form" class="bg-discord-input rounded-lg flex items-center px-4 py-2.5">
+                                <button type="button" class="text-gray-400 hover:text-white mr-4 transition-colors">
+                                    <i data-lucide="plus-circle" class="w-6 h-6"></i>
+                                </button>
+                                <input type="text" id="chat-input" placeholder="Conversar no canal..." autocomplete="off" class="flex-1 bg-transparent text-white outline-none placeholder-gray-500 text-sm">
+                                <button type="submit" class="hidden"></button>
+                            </form>
+                        </div>
+                    </div>
+                    
+                    <!-- Painel de Membros (Direita) -->
+                    <div id="members-list-panel" class="w-60 bg-discord-dark flex-shrink-0 border-l border-discord-darkest hidden flex flex-col">
+                        <div class="p-4 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                            Membros — <span id="members-count">0</span>
+                        </div>
+                        <div id="members-list-container" class="flex-1 overflow-y-auto px-2 space-y-1">
+                            <!-- Membros dinâmicos -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TELA DE GRADE DE VOZ / VÍDEO (CALL) -->
+            <div id="voice-grid-container" class="hidden flex-1 flex flex-col bg-discord-voiceGrid min-w-0">
+                <!-- Cabeçalho da Call -->
+                <div class="h-12 border-b border-discord-darkest flex items-center justify-between px-4 flex-shrink-0 bg-discord-dark">
+                    <div class="flex items-center space-x-2 text-white font-bold">
+                        <i data-lucide="volume-2" class="w-6 h-6 text-gray-400"></i>
+                        <span id="voice-call-header-name">Geral</span>
+                    </div>
+                    <button onclick="toggleVoiceGridMode()" class="bg-discord-light hover:bg-discord-input text-gray-300 hover:text-white text-xs px-3 py-1.5 rounded font-medium transition-colors flex items-center space-x-1">
+                        <i data-lucide="message-square" class="w-4 h-4"></i>
+                        <span>Voltar para o Chat</span>
+                    </button>
+                </div>
+
+                <!-- Grade de Streams/Cards de Voz -->
+                <div class="flex-1 p-6 overflow-y-auto min-h-0 flex items-center justify-center">
+                    <div id="voice-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full h-full max-w-6xl max-h-[85vh]">
+                        <!-- Cards de voz dos usuários inseridos dinamicamente -->
+                    </div>
+                </div>
+
+                <!-- Controles Flutuantes da Call (Rodapé) -->
+                <div class="h-20 bg-discord-dark border-t border-discord-darkest flex items-center justify-center space-x-4 flex-shrink-0 z-40">
+                    <button onclick="toggleMic()" id="call-btn-mute" class="w-12 h-12 rounded-full bg-discord-light text-gray-300 hover:bg-discord-lighter hover:text-white transition-all flex items-center justify-center shadow-lg" title="Mute">
+                        <i data-lucide="mic" class="w-5 h-5" id="call-mic-icon"></i>
+                    </button>
+                    <button onclick="toggleScreenShare()" id="call-btn-screen" class="w-12 h-12 rounded-full bg-discord-light text-gray-300 hover:bg-discord-lighter hover:text-white transition-all flex items-center justify-center shadow-lg" title="Compartilhar Tela">
+                        <i data-lucide="screen-share" class="w-5 h-5" id="call-screen-icon"></i>
+                    </button>
+                    <button onclick="disconnectVoice()" class="w-12 h-12 rounded-full bg-discord-red text-white hover:bg-discord-redHover transition-all flex items-center justify-center shadow-lg" title="Desconectar da Call">
+                        <i data-lucide="phone-off" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- PAGINA INICIAL (HOME - MENSAGENS DIRETAS) -->
+            <div id="home-container" class="hidden flex-1 flex flex-col items-center justify-center text-center p-8 select-text">
+                <div class="max-w-[480px] space-y-6">
+                    <div class="w-24 h-24 bg-discord-brand bg-opacity-10 text-discord-brand rounded-full flex items-center justify-center mx-auto shadow-2xl">
+                        <i data-lucide="message-square" class="w-12 h-12"></i>
+                    </div>
+                    <div class="space-y-2">
+                        <h1 class="text-3xl font-bold text-white">Nenhum Servidor Ativo</h1>
+                        <p class="text-gray-400 text-sm">Crie seu próprio servidor para convidar seus amigos ou entre em um servidor existente usando um código de convite enviado por eles!</p>
+                    </div>
+                    <div class="flex justify-center space-x-4">
+                        <button onclick="toggleModal('create-server-modal', true)" class="bg-discord-green hover:bg-discord-greenHover text-white px-5 py-2.5 rounded font-medium transition-colors flex items-center space-x-2">
+                            <i data-lucide="plus" class="w-5 h-5"></i>
+                            <span>Criar Servidor</span>
+                        </button>
+                        <button onclick="toggleModal('join-server-modal', true)" class="bg-discord-brand hover:bg-discord-brandHover text-white px-5 py-2.5 rounded font-medium transition-colors flex items-center space-x-2">
+                            <i data-lucide="compass" class="w-5 h-5"></i>
+                            <span>Entrar em Servidor</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ================= MODAIS ================= -->
+    <!-- Modal Criar Servidor -->
+    <div id="create-server-modal" class="modal-overlay hidden">
+        <div class="bg-discord-dark p-6 rounded-md w-full max-w-[400px] border border-gray-800 shadow-2xl">
+            <h3 class="text-xl font-bold text-white mb-2">Criar seu servidor</h3>
+            <p class="text-gray-400 text-xs mb-4">Seu servidor é onde você e seus amigos se reúnem. Dê um nome a ele.</p>
+            <form id="create-server-form" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Nome do Servidor</label>
+                    <input type="text" id="create-server-name" required placeholder="Servidor de Galera" class="w-full bg-discord-darkest text-white border border-transparent focus:border-discord-brand p-2.5 rounded outline-none text-sm transition-all">
+                </div>
+                <div class="flex items-center justify-end space-x-3 pt-2">
+                    <button type="button" onclick="toggleModal('create-server-modal', false)" class="text-gray-400 hover:text-white text-sm font-medium">Cancelar</button>
+                    <button type="submit" class="bg-discord-brand hover:bg-discord-brandHover text-white px-4 py-2.5 rounded text-sm font-medium transition-colors">Criar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Entrar em Servidor -->
+    <div id="join-server-modal" class="modal-overlay hidden">
+        <div class="bg-discord-dark p-6 rounded-md w-full max-w-[400px] border border-gray-800 shadow-2xl">
+            <h3 class="text-xl font-bold text-white mb-2">Entrar em um Servidor</h3>
+            <p class="text-gray-400 text-xs mb-4">Insira um código de convite para entrar em um servidor existente. Formato: <span class="font-mono text-gray-300">DC-XXXXXX</span></p>
+            <form id="join-server-form" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Código de Convite</label>
+                    <input type="text" id="join-server-code" required placeholder="DC-AB12CD" class="w-full bg-discord-darkest text-white border border-transparent focus:border-discord-brand p-2.5 rounded outline-none text-sm transition-all">
+                </div>
+                <div id="join-server-error" class="hidden text-xs text-discord-red">Código inválido.</div>
+                <div class="flex items-center justify-end space-x-3 pt-2">
+                    <button type="button" onclick="toggleModal('join-server-modal', false)" class="text-gray-400 hover:text-white text-sm font-medium">Cancelar</button>
+                    <button type="submit" class="bg-discord-brand hover:bg-discord-brandHover text-white px-4 py-2.5 rounded text-sm font-medium transition-colors">Entrar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Criar Canal -->
+    <div id="create-channel-modal" class="modal-overlay hidden">
+        <div class="bg-discord-dark p-6 rounded-md w-full max-w-[400px] border border-gray-800 shadow-2xl">
+            <h3 class="text-xl font-bold text-white mb-2">Criar Canal</h3>
+            <form id="create-channel-form" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Tipo de Canal</label>
+                    <div class="space-y-2 mt-1">
+                        <label class="flex items-center p-3 bg-discord-light rounded cursor-pointer border border-transparent hover:border-discord-brand" id="label-chan-type-text">
+                            <input type="radio" name="chan-type" value="text" checked class="hidden" onchange="updateChanModalUI()">
+                            <i data-lucide="hash" class="w-5 h-5 text-gray-400 mr-3"></i>
+                            <div class="flex flex-col">
+                                <span class="text-sm font-bold text-white">Texto</span>
+                                <span class="text-xs text-gray-400">Postar mensagens, imagens e opiniões</span>
+                            </div>
+                        </label>
+                        <label class="flex items-center p-3 bg-discord-light rounded cursor-pointer border border-transparent hover:border-discord-brand" id="label-chan-type-voice">
+                            <input type="radio" name="chan-type" value="voice" class="hidden" onchange="updateChanModalUI()">
+                            <i data-lucide="volume-2" class="w-5 h-5 text-gray-400 mr-3"></i>
+                            <div class="flex flex-col">
+                                <span class="text-sm font-bold text-white">Voz</span>
+                                <span class="text-xs text-gray-400">Conversar por voz, vídeo e compartilhamento de tela</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Nome do Canal</label>
+                    <div class="relative flex items-center">
+                        <i data-lucide="hash" id="create-channel-icon" class="w-4 h-4 text-gray-400 absolute left-3"></i>
+                        <input type="text" id="create-channel-name" required placeholder="novo-canal" class="w-full bg-discord-darkest text-white border border-transparent focus:border-discord-brand pl-9 pr-3 py-2.5 rounded outline-none text-sm transition-all">
+                    </div>
+                </div>
+                <div class="flex items-center justify-end space-x-3 pt-2">
+                    <button type="button" onclick="toggleModal('create-channel-modal', false)" class="text-gray-400 hover:text-white text-sm font-medium">Cancelar</button>
+                    <button type="submit" class="bg-discord-brand hover:bg-discord-brandHover text-white px-4 py-2.5 rounded text-sm font-medium transition-colors">Criar Canal</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Compartilhar Código de Convite -->
+    <div id="invite-share-modal" class="modal-overlay hidden" onclick="if(event.target===this) toggleModal('invite-share-modal', false)">
+        <div class="bg-discord-dark p-6 rounded-md w-full max-w-[400px] border border-gray-800 shadow-2xl">
+            <div class="flex justify-between items-start mb-2">
+                <h3 class="text-lg font-bold text-white">Convidar amigos para <span id="invite-share-server-name" class="text-discord-brand">Servidor</span></h3>
+                <button onclick="toggleModal('invite-share-modal', false)" class="text-gray-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <p class="text-xs text-gray-400 mb-4">Envie este código para seus amigos para dar acesso a este servidor!</p>
+            <div class="flex items-center bg-discord-darkest rounded border border-gray-800 p-1 pl-3">
+                <span id="invite-share-code-display" class="font-mono text-white text-sm font-bold flex-1 select-all">DC-XXXXXX</span>
+                <button onclick="copyInviteCodeText()" id="btn-copy-invite" class="bg-discord-brand hover:bg-discord-brandHover text-white text-xs font-bold px-4 py-2 rounded transition-colors">
+                    Copiar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main JS Application script -->
+    <script src="/app.js"></script>
+</body>
+</html>

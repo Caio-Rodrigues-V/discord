@@ -1,0 +1,79 @@
+/* Scrollbar Customizada Estilo Discord */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #2e3035;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #1a1b1e;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #111214;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+    display: none;
+}
+
+/* Modais */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+/* Animação e estilo para fala ativa */
+.speaking-active {
+    box-shadow: 0 0 0 3px #248046;
+    animation: pulse-border 1.5s infinite;
+}
+
+@keyframes pulse-border {
+    0% {
+        box-shadow: 0 0 0 2px rgba(36, 128, 70, 0.8);
+    }
+    50% {
+        box-shadow: 0 0 0 5px rgba(36, 128, 70, 0.4);
+    }
+    100% {
+        box-shadow: 0 0 0 2px rgba(36, 128, 70, 0.8);
+    }
+}
+
+/* Transição de redimensionamento do card de voz */
+.voice-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.voice-card:hover {
+    transform: scale(1.02);
+}
+
+/* Ajustes de flexibilidade e layout */
+input:focus {
+    box-shadow: none !important;
+}
+
+/* Tela de login bg blur e estilo */
+#auth-screen {
+    background-color: #1e1f22;
+}
+
+/* Efeito de hover suave no menu do servidor */
+.group:hover .group-hover\:block {
+    display: block;
+}
