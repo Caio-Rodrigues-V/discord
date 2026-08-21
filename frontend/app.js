@@ -22,12 +22,24 @@ let isDeafened = false;
 let isSharingScreen = false;
 let speakingLoopActive = false;
 let focusedUserId = null; // ID do usuário que está em foco na call (se houver)
+let locallyMutedUsers = new Set(); // IDs dos usuários mutados localmente
 
 const rtcConfig = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:openrelay.metered.ca:80' },
+        { 
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        { 
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        }
     ]
 };
 
@@ -308,8 +320,8 @@ function handleWebSocketMessage(msg) {
                     delete remoteVideoStreams[leftUserId];
                 }
                 
-                const audioEl = document.getElementById(`audio-peer-${leftUserId}`);
-                if (audioEl) audioEl.remove();
+                const peerAudios = document.querySelectorAll(`.audio-peer-${leftUserId}`);
+                peerAudios.forEach(a => a.remove());
                 
                 // Se o usuário focado saiu, tirar o foco
                 if (focusedUserId === leftUserId) {
@@ -526,6 +538,13 @@ function renderChannels() {
                         uRow.appendChild(live);
                     }
                     
+                    if (locallyMutedUsers.has(u.id)) {
+                        const muteIcon = document.createElement("i");
+                        muteIcon.setAttribute("data-lucide", "volume-x");
+                        muteIcon.className = "w-3 h-3 text-discord-red ml-1 flex-shrink-0";
+                        uRow.appendChild(muteIcon);
+                    }
+                    
                     usersList.appendChild(uRow);
                 });
                 chanEl.appendChild(usersList);
@@ -718,7 +737,7 @@ function disconnectVoice() {
     remoteVideoStreams = {};
     
     // Remover elementos de áudio do DOM
-    const audios = document.querySelectorAll("audio[id^='audio-peer-']");
+    const audios = document.querySelectorAll("audio[class^='audio-peer-']");
     audios.forEach(a => a.remove());
     
     // Enviar mensagem de saída
@@ -782,17 +801,18 @@ function createPeerConnection(peerId, isInitiator) {
         if (event.track.kind === 'audio') {
             remoteAudioStreams[peerId] = stream;
             
-            // Criar ou atualizar player de áudio
-            let audioEl = document.getElementById(`audio-peer-${peerId}`);
+            // Criar ou atualizar player de áudio usando o ID da track para suportar múltiplos canais (voz + áudio de tela)
+            let audioEl = document.getElementById(`audio-track-${event.track.id}`);
             if (!audioEl) {
                 audioEl = document.createElement("audio");
-                audioEl.id = `audio-peer-${peerId}`;
+                audioEl.id = `audio-track-${event.track.id}`;
+                audioEl.className = `audio-peer-${peerId}`; // Salva o ID do dono para limpeza e mute local
                 audioEl.autoplay = true;
                 document.body.appendChild(audioEl);
             }
             audioEl.srcObject = stream;
-            // Configurar mutar se estiver deafened
-            audioEl.muted = isDeafened;
+            // Configurar mutar se estiver deafened ou se o usuário estiver mutado localmente
+            audioEl.muted = isDeafened || locallyMutedUsers.has(peerId);
             
             audioEl.play().catch(err => {
                 console.warn("Autoplay bloqueado:", err);
@@ -947,25 +967,28 @@ async function toggleScreenShare() {
                 height: { max: 1080 },
                 frameRate: { max: 30 }
             },
-            audio: false // Compartilhar apenas tela
+            audio: true // Permitir compartilhar o som do sistema/aba
         });
         
         isSharingScreen = true;
         updateScreenControlsUI();
         
         // Listener para caso o usuário encerre o compartilhamento pelo botão nativo do navegador
-        screenStream.getVideoTracks()[0].onended = () => {
-            stopScreenShare();
-        };
+        if (screenStream.getVideoTracks().length > 0) {
+            screenStream.getVideoTracks()[0].onended = () => {
+                stopScreenShare();
+            };
+        }
         
-        const screenTrack = screenStream.getVideoTracks()[0];
-        
-        // Adicionar track de tela a todas as PeerConnections
+        // Adicionar todas as tracks (vídeo e áudio da tela se houver) a todas as PeerConnections
         for (const peerId in peerConnections) {
             const pc = peerConnections[peerId];
-            const sender = pc.addTrack(screenTrack, screenStream);
             if (!pc.screenSenders) pc.screenSenders = [];
-            pc.screenSenders.push(sender);
+            
+            screenStream.getTracks().forEach(track => {
+                const sender = pc.addTrack(track, screenStream);
+                pc.screenSenders.push(sender);
+            });
         }
         
         // Avisar canal WebSocket
@@ -1209,10 +1232,15 @@ function createVoiceUserCard(userId, isLarge) {
         </div>
         
         <!-- Badge com Nome de Usuário -->
-        <div class="absolute bottom-2 left-2 bg-black bg-opacity-60 px-2 py-1 rounded text-xs text-white font-medium flex items-center space-x-1 max-w-[85%]">
+        <div class="absolute bottom-2 left-2 bg-black bg-opacity-60 px-2 py-1 rounded text-xs text-white font-medium flex items-center space-x-2 max-w-[85%]">
             <span class="truncate">${user.username}</span>
             ${user.speaking ? '<i data-lucide="mic" class="w-3.5 h-3.5 text-discord-green"></i>' : ''}
-            ${user.sharingScreen ? '<span class="bg-discord-red text-[8px] px-1 rounded font-bold uppercase tracking-wider ml-1">Ao Vivo</span>' : ''}
+            ${user.sharingScreen ? '<span class="bg-discord-red text-[8px] px-1 rounded font-bold uppercase tracking-wider">Ao Vivo</span>' : ''}
+            ${user.id !== currentUser.id ? `
+                <button onclick="event.stopPropagation(); toggleLocalMute(${user.id})" class="p-0.5 rounded hover:bg-gray-700 transition-colors ml-1" title="Silenciar usuário para você">
+                    <i data-lucide="${locallyMutedUsers.has(user.id) ? 'volume-x' : 'volume-2'}" class="w-3.5 h-3.5 ${locallyMutedUsers.has(user.id) ? 'text-discord-red' : 'text-gray-400 hover:text-white'}"></i>
+                </button>
+            ` : ''}
         </div>
     `;
     
@@ -1236,6 +1264,22 @@ function updateSpeakingUI(userId, speaking) {
             }
         }
     }
+}
+
+function toggleLocalMute(userId) {
+    if (locallyMutedUsers.has(userId)) {
+        locallyMutedUsers.delete(userId);
+        // Desmutar todos os elementos de áudio deste usuário localmente
+        const audios = document.querySelectorAll(`.audio-peer-${userId}`);
+        audios.forEach(a => a.muted = isDeafened);
+    } else {
+        locallyMutedUsers.add(userId);
+        // Mutar todos os elementos de áudio deste usuário localmente
+        const audios = document.querySelectorAll(`.audio-peer-${userId}`);
+        audios.forEach(a => a.muted = true);
+    }
+    renderVoiceGrid();
+    renderChannels();
 }
 
 // --- Criação / Entrada em Servidor ---

@@ -4,6 +4,9 @@ import secrets
 import string
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "discord_clan.db")
+# Suporte a volumes persistentes no Railway
+if os.path.exists("/data"):
+    DB_PATH = "/data/discord_clan.db"
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -293,3 +296,30 @@ def get_channel_messages(channel_id, limit=100):
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def add_user_to_default_server(user_id):
+    """Verifica se existe algum servidor no banco. Se sim, adiciona o usuário a ele. Se não, cria um servidor padrão."""
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM servers ORDER BY id ASC LIMIT 1")
+        row = cursor.fetchone()
+        if row:
+            server_id = row["id"]
+            # Adicionar membro ao primeiro servidor (comunidade principal)
+            cursor.execute(
+                "INSERT OR IGNORE INTO server_members (server_id, user_id) VALUES (?, ?)",
+                (server_id, user_id)
+            )
+            conn.commit()
+            conn.close()
+        else:
+            # Se não existe nenhum servidor, fechar conexão e criar o primeiro
+            conn.close()
+            create_server("Comunidade Principal", user_id)
+    except Exception as e:
+        print(f"Erro ao adicionar usuário ao servidor padrão: {e}")
+        try:
+            conn.close()
+        except Exception:
+            pass

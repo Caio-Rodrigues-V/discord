@@ -14,7 +14,7 @@ from backend.database import (
     init_db, create_user, get_user_by_username, get_user_by_id,
     create_server, join_server_by_invite, get_user_servers,
     get_server_members, create_channel, get_server_channels,
-    save_message, get_channel_messages
+    save_message, get_channel_messages, add_user_to_default_server
 )
 
 SECRET_KEY = "discord-clan-secret-key-super-secure-12345"
@@ -116,8 +116,8 @@ def register(data: RegisterModel):
             detail="Nome de usuário já cadastrado."
         )
     
-    # Criar um servidor padrão para o primeiro usuário logado, facilitando testes
-    # (ou pode ser criado opcionalmente depois)
+    # Adicionar o usuário ao servidor padrão automaticamente (ou cria o servidor se for o primeiro)
+    add_user_to_default_server(user_id)
     
     token = create_access_token(user_id, data.username)
     return {
