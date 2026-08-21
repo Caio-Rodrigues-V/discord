@@ -419,7 +419,7 @@ async function loadServers() {
     try {
         const res = await fetch(`${API_URL}/api/servers?token=${currentUser.token}`);
         if (res.status === 401) {
-            handleLogout();
+            logout();
             return;
         }
         if (!res.ok) throw new Error("Erro ao buscar servidores");
@@ -508,7 +508,7 @@ async function loadChannels(serverId) {
     try {
         const res = await fetch(`${API_URL}/api/servers/${serverId}/channels?token=${currentUser.token}`);
         if (res.status === 401) {
-            handleLogout();
+            logout();
             return;
         }
         if (!res.ok) throw new Error();
@@ -609,7 +609,7 @@ async function loadServerMembers(serverId) {
     try {
         const res = await fetch(`${API_URL}/api/servers/${serverId}/members?token=${currentUser.token}`);
         if (res.status === 401) {
-            handleLogout();
+            logout();
             return;
         }
         if (!res.ok) throw new Error();
@@ -656,7 +656,7 @@ async function selectTextChannel(channelId, channelName) {
     try {
         const res = await fetch(`${API_URL}/api/channels/${channelId}/messages?token=${currentUser.token}`);
         if (res.status === 401) {
-            handleLogout();
+            logout();
             return;
         }
         if (!res.ok) throw new Error();
@@ -1354,7 +1354,7 @@ async function handleCreateServer(e) {
         });
         
         if (res.status === 401) {
-            handleLogout();
+            logout();
             return;
         }
         if (!res.ok) throw new Error();
@@ -1387,7 +1387,7 @@ async function handleJoinServer(e) {
         });
         
         if (res.status === 401) {
-            handleLogout();
+            logout();
             return;
         }
         
@@ -1465,7 +1465,7 @@ async function handleCreateChannel(e) {
         });
         
         if (res.status === 401) {
-            handleLogout();
+            logout();
             return;
         }
         if (!res.ok) throw new Error();
