@@ -9,7 +9,8 @@ let activeServerId = null; // null significa tela "Home" (DMs)
 let activeChannelId = null; // canal de texto ativo
 let activeVoiceChannelId = null; // canal de voz ativo
 let activeVoiceUsers = []; // lista de usuários na call atual: [{id, username, avatar_color, speaking, sharingScreen}]
-let remoteStreams = {}; // peerId -> MediaStream (recebido via WebRTC)
+let remoteAudioStreams = {}; // peerId -> MediaStream (áudio)
+let remoteVideoStreams = {}; // peerId -> MediaStream (vídeo/tela)
 
 // WebRTC
 let ws = null;
@@ -300,8 +301,11 @@ function handleWebSocketMessage(msg) {
                     peerConnections[leftUserId].close();
                     delete peerConnections[leftUserId];
                 }
-                if (remoteStreams[leftUserId]) {
-                    delete remoteStreams[leftUserId];
+                if (remoteAudioStreams[leftUserId]) {
+                    delete remoteAudioStreams[leftUserId];
+                }
+                if (remoteVideoStreams[leftUserId]) {
+                    delete remoteVideoStreams[leftUserId];
                 }
                 
                 const audioEl = document.getElementById(`audio-peer-${leftUserId}`);
@@ -340,11 +344,11 @@ function handleWebSocketMessage(msg) {
             if (screenUser) {
                 screenUser.sharingScreen = msg.sharing;
                 if (!msg.sharing) {
-                    // Limpar stream remota
-                    if (remoteStreams[msg.user_id]) {
-                        // Manter o áudio se houver, mas limpar tracks de vídeo
-                        const tracks = remoteStreams[msg.user_id].getVideoTracks();
+                    // Limpar stream remota de vídeo
+                    if (remoteVideoStreams[msg.user_id]) {
+                        const tracks = remoteVideoStreams[msg.user_id].getVideoTracks();
                         tracks.forEach(t => t.stop());
+                        delete remoteVideoStreams[msg.user_id];
                     }
                     if (focusedUserId === msg.user_id) {
                         focusedUserId = null;
@@ -710,7 +714,8 @@ function disconnectVoice() {
         peerConnections[peerId].close();
     }
     peerConnections = {};
-    remoteStreams = {};
+    remoteAudioStreams = {};
+    remoteVideoStreams = {};
     
     // Remover elementos de áudio do DOM
     const audios = document.querySelectorAll("audio[id^='audio-peer-']");
@@ -772,12 +777,11 @@ function createPeerConnection(peerId, isInitiator) {
     pc.ontrack = (event) => {
         console.log(`Recebeu track de ${peerId}:`, event.track.kind);
         
-        // Salvar stream
-        if (!remoteStreams[peerId]) {
-            remoteStreams[peerId] = event.streams[0];
-        }
+        const stream = event.streams[0] || new MediaStream([event.track]);
         
         if (event.track.kind === 'audio') {
+            remoteAudioStreams[peerId] = stream;
+            
             // Criar ou atualizar player de áudio
             let audioEl = document.getElementById(`audio-peer-${peerId}`);
             if (!audioEl) {
@@ -786,10 +790,16 @@ function createPeerConnection(peerId, isInitiator) {
                 audioEl.autoplay = true;
                 document.body.appendChild(audioEl);
             }
-            audioEl.srcObject = event.streams[0];
+            audioEl.srcObject = stream;
             // Configurar mutar se estiver deafened
             audioEl.muted = isDeafened;
+            
+            audioEl.play().catch(err => {
+                console.warn("Autoplay bloqueado:", err);
+            });
         } else if (event.track.kind === 'video') {
+            remoteVideoStreams[peerId] = stream;
+            
             // Quando a track de vídeo (tela) chegar, renderizamos a grade de voz para exibi-la
             renderVoiceGrid();
         }
@@ -1166,8 +1176,8 @@ function renderVoiceGrid() {
         
         if (u.id === currentUser.id && isSharingScreen && screenStream) {
             videoEl.srcObject = screenStream;
-        } else if (u.id !== currentUser.id && u.sharingScreen && remoteStreams[u.id]) {
-            videoEl.srcObject = remoteStreams[u.id];
+        } else if (u.id !== currentUser.id && u.sharingScreen && remoteVideoStreams[u.id]) {
+            videoEl.srcObject = remoteVideoStreams[u.id];
         } else {
             videoEl.classList.add("hidden");
         }
