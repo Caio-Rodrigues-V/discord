@@ -9,6 +9,7 @@ let activeServerId = null; // null significa tela "Home" (DMs)
 let activeChannelId = null; // canal de texto ativo
 let activeVoiceChannelId = null; // canal de voz ativo
 let activeVoiceUsers = []; // lista de usuários na call atual: [{id, username, avatar_color, speaking, sharingScreen}]
+let voiceStates = {}; // channelId -> [{id, username, avatar_color, speaking, sharingScreen}]
 let remoteAudioStreams = {}; // peerId -> MediaStream (áudio)
 let remoteVideoStreams = {}; // peerId -> MediaStream (vídeo/tela)
 
@@ -259,6 +260,12 @@ function handleWebSocketMessage(msg) {
             }
             break;
             
+        case "voice_states":
+            // Snapshot inicial de todos os participantes dos canais de voz
+            voiceStates = msg.states || {};
+            renderChannels();
+            break;
+            
         case "voice_channel_state":
             // Estado inicial da call ao entrar nela
             if (msg.channel_id === activeVoiceChannelId) {
@@ -268,6 +275,9 @@ function handleWebSocketMessage(msg) {
                     speaking: false,
                     sharingScreen: false
                 }));
+                
+                // Sincronizar com o voiceStates do canal
+                voiceStates[msg.channel_id] = activeVoiceUsers.map(u => ({ ...u }));
                 
                 // Conectar com todos os usuários existentes
                 activeVoiceUsers.forEach(user => {
@@ -282,7 +292,17 @@ function handleWebSocketMessage(msg) {
             break;
             
         case "voice_user_joined":
-            // Novo usuário entrou no canal de voz ativo
+            // Adicionar ao rastreador de canais geral
+            if (!voiceStates[msg.channel_id]) voiceStates[msg.channel_id] = [];
+            if (!voiceStates[msg.channel_id].find(u => u.id === msg.user.id)) {
+                voiceStates[msg.channel_id].push({
+                    ...msg.user,
+                    speaking: false,
+                    sharingScreen: false
+                });
+            }
+            
+            // Se for o nosso canal ativo, iniciar conexão WebRTC
             if (msg.channel_id === activeVoiceChannelId) {
                 const newUser = {
                     ...msg.user,
@@ -290,24 +310,28 @@ function handleWebSocketMessage(msg) {
                     sharingScreen: false
                 };
                 
-                // Evitar duplicações
+                // Evitar duplicações na lista local de call
                 if (!activeVoiceUsers.find(u => u.id === newUser.id)) {
                     activeVoiceUsers.push(newUser);
                 }
                 
                 // Criar PeerConnection passiva (esperando a oferta de quem entrou)
                 createPeerConnection(newUser.id, false);
-                
                 renderVoiceGrid();
-                renderChannels();
             }
+            renderChannels();
             break;
             
         case "voice_user_left":
-            // Um usuário saiu do canal de voz ativo
+            const leftUserId = msg.user_id;
+            
+            // Remover do rastreador de canais geral
+            if (voiceStates[msg.channel_id]) {
+                voiceStates[msg.channel_id] = voiceStates[msg.channel_id].filter(u => u.id !== leftUserId);
+            }
+            
+            // Se for do nosso canal ativo, fechar conexões
             if (msg.channel_id === activeVoiceChannelId) {
-                const leftUserId = msg.user_id;
-                
                 // Fechar conexão com ele
                 if (peerConnections[leftUserId]) {
                     peerConnections[leftUserId].close();
@@ -328,12 +352,11 @@ function handleWebSocketMessage(msg) {
                     focusedUserId = null;
                 }
                 
-                // Atualizar lista
+                // Atualizar lista local da call
                 activeVoiceUsers = activeVoiceUsers.filter(u => u.id !== leftUserId);
-                
                 renderVoiceGrid();
-                renderChannels();
             }
+            renderChannels();
             break;
             
         case "webrtc_signal":
@@ -348,6 +371,15 @@ function handleWebSocketMessage(msg) {
                 speakUser.speaking = msg.speaking;
                 updateSpeakingUI(msg.user_id, msg.speaking);
             }
+            // Sincronizar com o voiceStates geral
+            for (const cid in voiceStates) {
+                const u = voiceStates[cid].find(u => u.id === msg.user_id);
+                if (u) {
+                    u.speaking = msg.speaking;
+                    break;
+                }
+            }
+            renderChannels();
             break;
             
         case "screen_share_status":
@@ -368,6 +400,15 @@ function handleWebSocketMessage(msg) {
                 }
                 renderVoiceGrid();
             }
+            // Sincronizar com o voiceStates geral
+            for (const cid in voiceStates) {
+                const u = voiceStates[cid].find(u => u.id === msg.user_id);
+                if (u) {
+                    u.sharingScreen = msg.sharing;
+                    break;
+                }
+            }
+            renderChannels();
             break;
     }
 }
@@ -377,6 +418,10 @@ function handleWebSocketMessage(msg) {
 async function loadServers() {
     try {
         const res = await fetch(`${API_URL}/api/servers?token=${currentUser.token}`);
+        if (res.status === 401) {
+            handleLogout();
+            return;
+        }
         if (!res.ok) throw new Error("Erro ao buscar servidores");
         servers = await res.json();
         renderServerList();
@@ -462,6 +507,10 @@ async function selectServer(serverId) {
 async function loadChannels(serverId) {
     try {
         const res = await fetch(`${API_URL}/api/servers/${serverId}/channels?token=${currentUser.token}`);
+        if (res.status === 401) {
+            handleLogout();
+            return;
+        }
         if (!res.ok) throw new Error();
         channels = await res.json();
         renderChannels();
@@ -504,14 +553,13 @@ function renderChannels() {
             `;
             chanEl.appendChild(channelHeader);
             
-            // Se houver usuários neste canal de voz, exibir lista abaixo (assim como no Discord)
-            // (Para simplicidade, mostramos quem está na nossa call atual.
-            // Para outros canais, o servidor websocket poderia nos atualizar, mas por agora focamos na nossa call ativa)
-            if (isSelectedVoice && activeVoiceUsers.length > 0) {
+            // Se houver usuários neste canal de voz, exibir lista abaixo (lida de voiceStates em tempo real)
+            const chanUsers = voiceStates[chan.id] || [];
+            if (chanUsers.length > 0) {
                 const usersList = document.createElement("div");
                 usersList.className = "pl-7 pr-2 pb-1.5 flex flex-col space-y-1";
                 
-                activeVoiceUsers.forEach(u => {
+                chanUsers.forEach(u => {
                     const uRow = document.createElement("div");
                     uRow.className = "flex items-center space-x-2 py-0.5 text-xs text-gray-300";
                     
@@ -533,7 +581,7 @@ function renderChannels() {
                     // Indicadores de status
                     if (u.sharingScreen) {
                         const live = document.createElement("span");
-                        live.className = "bg-discord-red text-[8px] px-1 rounded font-bold text-white uppercase tracking-wider";
+                        live.className = "bg-discord-red text-[8px] px-1 rounded font-bold text-white uppercase tracking-wider flex-shrink-0";
                         live.innerText = "Ao vivo";
                         uRow.appendChild(live);
                     }
@@ -560,6 +608,10 @@ function renderChannels() {
 async function loadServerMembers(serverId) {
     try {
         const res = await fetch(`${API_URL}/api/servers/${serverId}/members?token=${currentUser.token}`);
+        if (res.status === 401) {
+            handleLogout();
+            return;
+        }
         if (!res.ok) throw new Error();
         const members = await res.json();
         
@@ -603,6 +655,10 @@ async function selectTextChannel(channelId, channelName) {
     // Carregar histórico
     try {
         const res = await fetch(`${API_URL}/api/channels/${channelId}/messages?token=${currentUser.token}`);
+        if (res.status === 401) {
+            handleLogout();
+            return;
+        }
         if (!res.ok) throw new Error();
         const messages = await res.json();
         
@@ -1297,6 +1353,10 @@ async function handleCreateServer(e) {
             body: JSON.stringify({ name })
         });
         
+        if (res.status === 401) {
+            handleLogout();
+            return;
+        }
         if (!res.ok) throw new Error();
         const server = await res.json();
         
@@ -1325,6 +1385,11 @@ async function handleJoinServer(e) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ invite_code })
         });
+        
+        if (res.status === 401) {
+            handleLogout();
+            return;
+        }
         
         const data = await res.json();
         
@@ -1399,6 +1464,10 @@ async function handleCreateChannel(e) {
             body: JSON.stringify({ name, type })
         });
         
+        if (res.status === 401) {
+            handleLogout();
+            return;
+        }
         if (!res.ok) throw new Error();
         const chan = await res.json();
         

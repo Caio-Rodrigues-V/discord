@@ -96,6 +96,13 @@ def get_current_user_from_header(token: str):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token inválido ou expirado"
         )
+    # Verificar se o usuário ainda existe no banco de dados (caso o DB tenha sido resetado)
+    user = get_user_by_id(user_data["user_id"])
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuário não existe ou banco foi reiniciado. Faça login novamente."
+        )
     return user_data
 
 
@@ -237,6 +244,18 @@ class ConnectionManager:
             "avatar_color": avatar_color
         }
         print(f"WebSocket conectado: {username} (ID: {user_id})")
+        
+        # Enviar estados de canais de voz iniciais
+        await self.send_personal_message({
+            "type": "voice_states",
+            "states": self.get_all_voice_states()
+        }, user_id)
+
+    def get_all_voice_states(self) -> dict:
+        states = {}
+        for cid, uids in self.voice_channels.items():
+            states[cid] = [self.user_info[uid] for uid in uids if uid in self.user_info]
+        return states
 
     def disconnect(self, user_id: int):
         if user_id in self.active_connections:
@@ -341,12 +360,13 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                 # Sair de qualquer canal anterior
                 old_channel_id, old_remaining = manager.leave_voice_channel_if_any(user_id)
                 if old_channel_id:
-                    # Notificar usuários do canal antigo
+                    # Notificar todos no servidor que o usuário saiu do canal antigo
+                    all_connected = list(manager.active_connections.keys())
                     await manager.broadcast_to_users({
                         "type": "voice_user_left",
                         "channel_id": old_channel_id,
                         "user_id": user_id
-                    }, old_remaining)
+                    }, all_connected)
                 
                 # Ingressar no novo canal de voz
                 if channel_id not in manager.voice_channels:
@@ -367,22 +387,23 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                     "users": current_members
                 }, user_id)
                 
-                # Notificar os outros membros no canal de voz que este usuário entrou
-                other_members = [uid for uid in manager.voice_channels[channel_id] if uid != user_id]
+                # Notificar TODO MUNDO no servidor que este usuário entrou
+                all_connected = list(manager.active_connections.keys())
                 await manager.broadcast_to_users({
                     "type": "voice_user_joined",
                     "channel_id": channel_id,
                     "user": manager.user_info[user_id]
-                }, other_members)
+                }, all_connected)
                 
             elif msg_type == "voice_leave":
                 channel_id, remaining = manager.leave_voice_channel_if_any(user_id)
                 if channel_id:
+                    all_connected = list(manager.active_connections.keys())
                     await manager.broadcast_to_users({
                         "type": "voice_user_left",
                         "channel_id": channel_id,
                         "user_id": user_id
-                    }, remaining)
+                    }, all_connected)
                     
             elif msg_type == "webrtc_signal":
                 target_id = int(message.get("target_id"))
@@ -397,36 +418,51 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                     }, target_id)
                     
             elif msg_type == "voice_speaking":
-                # Indica se o usuário está falando para mostrar o círculo verde na UI
+                # Indica se o usuário está falando para mostrar o círculo verde na UI de todos
                 channel_id = manager.user_voice_channels.get(user_id)
                 if channel_id and channel_id in manager.voice_channels:
                     speaking = bool(message.get("speaking"))
-                    other_members = [uid for uid in manager.voice_channels[channel_id] if uid != user_id]
+                    all_connected = list(manager.active_connections.keys())
                     await manager.broadcast_to_users({
                         "type": "voice_speaking",
                         "user_id": user_id,
                         "speaking": speaking
-                    }, other_members)
+                    }, all_connected)
                     
             elif msg_type == "screen_share_status":
-                # Avisa aos outros que começou/parou de compartilhar tela
+                # Avisa a todos que começou/parou de compartilhar tela para atualizar o ao vivo
                 channel_id = manager.user_voice_channels.get(user_id)
                 if channel_id and channel_id in manager.voice_channels:
                     sharing = bool(message.get("sharing"))
-                    other_members = [uid for uid in manager.voice_channels[channel_id] if uid != user_id]
+                    all_connected = list(manager.active_connections.keys())
                     await manager.broadcast_to_users({
                         "type": "screen_share_status",
+                        "channel_id": channel_id,
                         "user_id": user_id,
                         "sharing": sharing
-                    }, other_members)
+                    }, all_connected)
 
     except WebSocketDisconnect:
+        channel_id, remaining = manager.leave_voice_channel_if_any(user_id)
         manager.disconnect(user_id)
-        # Notificar os outros no canal de voz se ele estava em algum
-        # (leave_voice_channel_if_any é chamada dentro de disconnect e limpa o canal)
-        # Mas precisamos enviar a notificação. Deixamos que a função acima retorne os dados.
-        # Vamos re-buscar no momento da desconexão
-        pass
+        if channel_id:
+            all_connected = list(manager.active_connections.keys())
+            await manager.broadcast_to_users({
+                "type": "voice_user_left",
+                "channel_id": channel_id,
+                "user_id": user_id
+            }, all_connected)
     except Exception as e:
         print(f"Erro na conexão WebSocket do usuário {user_id}: {e}")
+        channel_id, remaining = manager.leave_voice_channel_if_any(user_id)
         manager.disconnect(user_id)
+        if channel_id:
+            try:
+                all_connected = list(manager.active_connections.keys())
+                await manager.broadcast_to_users({
+                    "type": "voice_user_left",
+                    "channel_id": channel_id,
+                    "user_id": user_id
+                }, all_connected)
+            except Exception:
+                pass
