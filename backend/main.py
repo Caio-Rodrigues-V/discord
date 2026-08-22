@@ -14,7 +14,8 @@ from backend.database import (
     init_db, create_user, get_user_by_username, get_user_by_id,
     create_server, join_server_by_invite, get_user_servers,
     get_server_members, create_channel, get_server_channels,
-    save_message, get_channel_messages, add_user_to_default_server
+    save_message, get_channel_messages, add_user_to_default_server,
+    get_db, get_cursor, qry
 )
 
 SECRET_KEY = "discord-clan-secret-key-super-secure-12345"
@@ -333,17 +334,15 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                 if saved_msg:
                     # Encontrar todos os membros do servidor deste canal para transmitir
                     # (Para simplicidade, transmitimos a todos os membros do servidor conectados)
-                    import sqlite3
-                    conn = sqlite3.connect(os.path.join(os.path.dirname(__file__), "discord_clan.db"))
-                    conn.row_factory = sqlite3.Row
-                    cursor = conn.cursor()
+                    conn = get_db()
+                    cursor = get_cursor(conn)
                     # Achar o server_id deste canal
-                    cursor.execute("SELECT server_id FROM channels WHERE id = ?", (channel_id,))
+                    cursor.execute(qry("SELECT server_id FROM channels WHERE id = ?"), (channel_id,))
                     chan = cursor.fetchone()
                     if chan:
                         server_id = chan["server_id"]
                         # Buscar membros do servidor
-                        cursor.execute("SELECT user_id FROM server_members WHERE server_id = ?", (server_id,))
+                        cursor.execute(qry("SELECT user_id FROM server_members WHERE server_id = ?"), (server_id,))
                         members = cursor.fetchall()
                         member_ids = [m["user_id"] for m in members]
                         
