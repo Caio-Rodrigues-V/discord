@@ -72,6 +72,30 @@ document.addEventListener("DOMContentLoaded", async () => {
     checkAuth();
     setupEventListeners();
     lucide.createIcons();
+    
+    // Configuração do slider de volume do menu de contexto
+    const volumeSlider = document.getElementById("context-volume-slider");
+    if (volumeSlider) {
+        volumeSlider.addEventListener("input", (e) => {
+            const val = e.target.value;
+            document.getElementById("context-volume-val").innerText = `${val}%`;
+            if (activeContextUserId) {
+                userVolumes[activeContextUserId] = parseInt(val);
+                const audios = document.querySelectorAll(`.audio-peer-${activeContextUserId}`);
+                audios.forEach(audio => {
+                    audio.volume = val / 100;
+                });
+            }
+        });
+    }
+    
+    // Fechar o menu de contexto ao clicar fora dele
+    document.addEventListener("click", (e) => {
+        const menu = document.getElementById("user-context-menu");
+        if (menu && !menu.contains(e.target)) {
+            menu.classList.add("hidden");
+        }
+    });
 });
 
 // --- Event Listeners Globais ---
@@ -438,6 +462,45 @@ function handleWebSocketMessage(msg) {
             }
             renderChannels();
             break;
+            
+        case "server_voice_moderation":
+            const modUserId = msg.user_id;
+            const modUser = activeVoiceUsers.find(u => u.id === modUserId);
+            if (modUser) {
+                if (msg.action === "mute") modUser.serverMuted = msg.value;
+                if (msg.action === "deafen") modUser.serverDeafened = msg.value;
+                renderVoiceGrid();
+            }
+            for (const cid in voiceStates) {
+                const u = voiceStates[cid].find(u => u.id === modUserId);
+                if (u) {
+                    if (msg.action === "mute") u.serverMuted = msg.value;
+                    if (msg.action === "deafen") u.serverDeafened = msg.value;
+                    break;
+                }
+            }
+            renderChannels();
+            
+            if (modUserId === currentUser.id) {
+                if (msg.action === "mute") {
+                    if (localStream && localStream.getAudioTracks().length > 0) {
+                        localStream.getAudioTracks()[0].enabled = !msg.value && !isMuted;
+                    }
+                    alert(msg.value ? "Você foi mutado pelo servidor." : "Você foi desmutado pelo servidor.");
+                } else if (msg.action === "deafen") {
+                    const audios = document.querySelectorAll("audio");
+                    audios.forEach(audio => {
+                        audio.muted = msg.value || isDeafened;
+                    });
+                    alert(msg.value ? "Você foi ensurdecido pelo servidor." : "Você foi desensurdecido pelo servidor.");
+                }
+            }
+            break;
+            
+        case "server_voice_force_disconnect":
+            alert("Você foi desconectado da chamada de voz por um moderador.");
+            disconnectVoice();
+            break;
     }
 }
 
@@ -503,6 +566,7 @@ function selectHome() {
 }
 
 async function selectServer(serverId) {
+    toggleMobileSidebar(false);
     activeServerId = serverId;
     document.getElementById("home-indicator").className = "absolute left-0 w-1 bg-white rounded-r-md h-0 transition-all duration-200";
     
@@ -682,6 +746,7 @@ async function loadServerMembers(serverId) {
 // --- Chat de Texto ---
 
 async function selectTextChannel(channelId, channelName) {
+    toggleMobileSidebar(false);
     activeChannelId = channelId;
     showView('chat');
     
@@ -760,6 +825,7 @@ async function handleSendChatMessage(e) {
 // --- Chamada de Voz e WebRTC ---
 
 async function joinVoiceChannel(channelId, channelName) {
+    toggleMobileSidebar(false);
     if (activeVoiceChannelId === channelId) {
         // Se clicar no canal de voz ativo, abrir a tela de grade
         showView('voice');
@@ -1352,6 +1418,12 @@ function createVoiceUserCard(userId, isLarge) {
     card.className = `voice-card relative bg-discord-voiceCard rounded-lg flex flex-col items-center justify-center border border-gray-800 overflow-hidden cursor-pointer ${isLarge ? 'flex-1 h-full min-h-[300px]' : 'h-40 md:h-48'}`;
     card.ondblclick = () => focusVoiceUser(userId);
     
+    // Abrir menu com clique direito
+    card.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        showUserContextMenu(userId, e.clientX, e.clientY);
+    });
+    
     // Margem de fala ativa
     const speakingClass = user.speaking ? 'speaking-active' : '';
     
@@ -1367,16 +1439,22 @@ function createVoiceUserCard(userId, isLarge) {
         </div>
         
         <!-- Badge com Nome de Usuário -->
-        <div class="absolute bottom-2 left-2 bg-black bg-opacity-60 px-2 py-1 rounded text-xs text-white font-medium flex items-center space-x-2 max-w-[85%]">
+        <div class="absolute bottom-2 left-2 bg-black bg-opacity-60 px-2 py-1 rounded text-xs text-white font-medium flex items-center space-x-1.5 max-w-[85%]">
             <span class="truncate">${user.username}</span>
             ${user.speaking ? '<i data-lucide="mic" class="w-3.5 h-3.5 text-discord-green"></i>' : ''}
             ${user.sharingScreen ? '<span class="bg-discord-red text-[8px] px-1 rounded font-bold uppercase tracking-wider">Ao Vivo</span>' : ''}
-            ${user.deafened ? '<i data-lucide="volume-x" class="w-3.5 h-3.5 text-discord-red" title="Ensurdecido"></i>' : (user.muted ? '<i data-lucide="mic-off" class="w-3.5 h-3.5 text-discord-red" title="Mutado"></i>' : '')}
+            ${(user.serverDeafened || user.deafened) ? '<i data-lucide="volume-x" class="w-3.5 h-3.5 text-discord-red" title="Ensurdecido"></i>' : ((user.serverMuted || user.muted) ? '<i data-lucide="mic-off" class="w-3.5 h-3.5 text-discord-red" title="Mutado"></i>' : '')}
+            
             ${user.id !== currentUser.id ? `
-                <button onclick="event.stopPropagation(); toggleLocalMute(${user.id})" class="p-0.5 rounded hover:bg-gray-700 transition-colors ml-1" title="Silenciar usuário para você">
+                <button onclick="event.stopPropagation(); toggleLocalMute(${user.id})" class="p-0.5 rounded hover:bg-gray-700 transition-colors" title="Silenciar usuário para você">
                     <i data-lucide="${locallyMutedUsers.has(user.id) ? 'volume-x' : 'volume-2'}" class="w-3.5 h-3.5 ${locallyMutedUsers.has(user.id) ? 'text-discord-red' : 'text-gray-400 hover:text-white'}"></i>
                 </button>
             ` : ''}
+            
+            <!-- Botão de Opções (Context Menu) -->
+            <button onclick="event.stopPropagation(); showUserContextMenu(${user.id}, event.clientX, event.clientY)" class="p-0.5 rounded hover:bg-gray-700 transition-colors" title="Mais opções">
+                <i data-lucide="more-vertical" class="w-3.5 h-3.5 text-gray-400 hover:text-white"></i>
+            </button>
         </div>
     `;
     
@@ -1416,6 +1494,106 @@ function toggleLocalMute(userId) {
     }
     renderVoiceGrid();
     renderChannels();
+}
+
+// --- Opções de Menu de Contexto e Volume do Usuário ---
+let userVolumes = {}; // userId -> volume value (0 to 200)
+let activeContextUserId = null;
+
+function showUserContextMenu(userId, x, y) {
+    activeContextUserId = userId;
+    const user = activeVoiceUsers.find(u => u.id === userId);
+    if (!user) return;
+    
+    const menu = document.getElementById("user-context-menu");
+    menu.classList.remove("hidden");
+    
+    const menuWidth = 208;
+    const menuHeight = 220;
+    
+    let posX = x;
+    let posY = y;
+    
+    if (x + menuWidth > window.innerWidth) {
+        posX = window.innerWidth - menuWidth - 10;
+    }
+    if (y + menuHeight > window.innerHeight) {
+        posY = window.innerHeight - menuHeight - 10;
+    }
+    
+    menu.style.left = `${posX}px`;
+    menu.style.top = `${posY}px`;
+    
+    const currentVolume = userVolumes[userId] !== undefined ? userVolumes[userId] : 100;
+    const slider = document.getElementById("context-volume-slider");
+    slider.value = currentVolume;
+    document.getElementById("context-volume-val").innerText = `${currentVolume}%`;
+    
+    const muteCheck = document.getElementById("context-mute-check");
+    const deafenCheck = document.getElementById("context-deafen-check");
+    
+    if (user.serverMuted) {
+        muteCheck.setAttribute("data-lucide", "check-square");
+        muteCheck.classList.add("text-discord-brand");
+    } else {
+        muteCheck.setAttribute("data-lucide", "square");
+        muteCheck.classList.remove("text-discord-brand");
+    }
+    
+    if (user.serverDeafened) {
+        deafenCheck.setAttribute("data-lucide", "check-square");
+        deafenCheck.classList.add("text-discord-brand");
+    } else {
+        deafenCheck.setAttribute("data-lucide", "square");
+        deafenCheck.classList.remove("text-discord-brand");
+    }
+    
+    const modOptions = document.getElementById("context-mod-options");
+    if (userId === currentUser.id) {
+        modOptions.classList.add("hidden");
+    } else {
+        modOptions.classList.remove("hidden");
+    }
+    
+    lucide.createIcons();
+}
+
+function toggleServerMuteFromMenu() {
+    if (!activeContextUserId) return;
+    const user = activeVoiceUsers.find(u => u.id === activeContextUserId);
+    if (!user) return;
+    const nextVal = !user.serverMuted;
+    sendWsMessage({
+        type: "server_voice_moderation",
+        target_id: activeContextUserId,
+        action: "mute",
+        value: nextVal
+    });
+    document.getElementById("user-context-menu").classList.add("hidden");
+}
+
+function toggleServerDeafenFromMenu() {
+    if (!activeContextUserId) return;
+    const user = activeVoiceUsers.find(u => u.id === activeContextUserId);
+    if (!user) return;
+    const nextVal = !user.serverDeafened;
+    sendWsMessage({
+        type: "server_voice_moderation",
+        target_id: activeContextUserId,
+        action: "deafen",
+        value: nextVal
+    });
+    document.getElementById("user-context-menu").classList.add("hidden");
+}
+
+function disconnectUserFromMenu() {
+    if (!activeContextUserId) return;
+    sendWsMessage({
+        type: "server_voice_moderation",
+        target_id: activeContextUserId,
+        action: "disconnect"
+    });
+    document.getElementById("user-context-menu").classList.add("hidden");
 }
 
 // --- Criação / Entrada em Servidor ---
@@ -1600,4 +1778,25 @@ function copyInviteCodeText() {
             btn.className = "bg-discord-brand hover:bg-discord-brandHover text-white text-xs font-bold px-4 py-2 rounded transition-colors";
         }, 2000);
     });
+}
+
+let mobileSidebarOpen = false;
+function toggleMobileSidebar(force) {
+    mobileSidebarOpen = force !== undefined ? force : !mobileSidebarOpen;
+    
+    const sidebarServers = document.querySelector(".sidebar-servers");
+    const sidebarChannels = document.querySelector(".sidebar-channels");
+    const backdrop = document.getElementById("sidebar-backdrop");
+    
+    if (!sidebarServers || !sidebarChannels || !backdrop) return;
+    
+    if (mobileSidebarOpen) {
+        sidebarServers.classList.remove("-translate-x-full");
+        sidebarChannels.classList.remove("-translate-x-full");
+        backdrop.classList.remove("hidden");
+    } else {
+        sidebarServers.classList.add("-translate-x-full");
+        sidebarChannels.classList.add("-translate-x-full");
+        backdrop.classList.add("hidden");
+    }
 }

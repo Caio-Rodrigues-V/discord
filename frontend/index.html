@@ -74,8 +74,11 @@
     <!-- ================= TELA PRINCIPAL (DASHBOARD) ================= -->
     <div id="app-screen" class="hidden flex-1 flex overflow-hidden">
         
+        <!-- Backdrop para fechar sidebar no mobile -->
+        <div id="sidebar-backdrop" class="hidden fixed inset-0 bg-black bg-opacity-60 z-15 lg:hidden" onclick="toggleMobileSidebar(false)"></div>
+        
         <!-- BARRA LATERAL 1: LISTA DE SERVIDORES -->
-        <div class="w-[72px] bg-discord-darkest flex flex-col items-center py-3 space-y-2 flex-shrink-0 z-20">
+        <div class="sidebar-servers fixed lg:static top-0 bottom-0 left-0 w-[72px] bg-discord-darkest flex flex-col items-center py-3 space-y-2 flex-shrink-0 z-30 transition-transform duration-200 transform -translate-x-full lg:translate-x-0">
             <!-- Botão Discord Logo (Home / Lista de Servidores) -->
             <div class="relative group flex items-center justify-center w-12 h-12 rounded-[24px] bg-discord-light text-discord-brand hover:rounded-[16px] hover:bg-discord-brand hover:text-white transition-all duration-200 cursor-pointer" onclick="selectHome()">
                 <div class="absolute left-0 w-1 bg-white rounded-r-md group-hover:h-5 h-0 transition-all duration-200" id="home-indicator"></div>
@@ -107,7 +110,7 @@
         </div>
 
         <!-- BARRA LATERAL 2: LISTA DE CANAIS -->
-        <div class="w-60 bg-discord-dark flex flex-col flex-shrink-0 z-10 select-none">
+        <div class="sidebar-channels fixed lg:static top-0 bottom-0 left-[72px] lg:left-0 w-60 bg-discord-dark flex flex-col flex-shrink-0 z-20 select-none transition-transform duration-200 transform -translate-x-full lg:translate-x-0">
             <!-- Cabeçalho do Servidor -->
             <div class="h-12 border-b border-discord-darkest flex items-center justify-between px-4 font-bold text-white shadow-sm cursor-pointer hover:bg-discord-light transition-colors duration-200 relative group">
                 <span id="server-header-name" class="truncate">Carregando...</span>
@@ -218,6 +221,9 @@
                 <!-- Cabeçalho do Canal -->
                 <div class="h-12 border-b border-discord-darkest flex items-center justify-between px-4 flex-shrink-0 shadow-sm">
                     <div class="flex items-center space-x-2 text-white font-bold">
+                        <button onclick="event.stopPropagation(); toggleMobileSidebar()" class="lg:hidden p-1 mr-1 text-gray-400 hover:text-white rounded focus:outline-none" title="Menu">
+                            <i data-lucide="menu" class="w-5 h-5"></i>
+                        </button>
                         <i data-lucide="hash" class="w-6 h-6 text-gray-400"></i>
                         <span id="chat-header-name">canal-selecionado</span>
                     </div>
@@ -267,6 +273,9 @@
                 <!-- Cabeçalho da Call -->
                 <div class="h-12 border-b border-discord-darkest flex items-center justify-between px-4 flex-shrink-0 bg-discord-dark">
                     <div class="flex items-center space-x-2 text-white font-bold">
+                        <button onclick="event.stopPropagation(); toggleMobileSidebar()" class="lg:hidden p-1 mr-1 text-gray-400 hover:text-white rounded focus:outline-none" title="Menu">
+                            <i data-lucide="menu" class="w-5 h-5"></i>
+                        </button>
                         <i data-lucide="volume-2" class="w-6 h-6 text-gray-400"></i>
                         <span id="voice-call-header-name">Geral</span>
                     </div>
@@ -298,9 +307,20 @@
             </div>
 
             <!-- PAGINA INICIAL (HOME - MENSAGENS DIRETAS) -->
-            <div id="home-container" class="hidden flex-1 flex flex-col items-center justify-center text-center p-8 select-text">
-                <div class="max-w-[480px] space-y-6">
-                    <div class="w-24 h-24 bg-discord-brand bg-opacity-10 text-discord-brand rounded-full flex items-center justify-center mx-auto shadow-2xl">
+            <!-- HOME (Sem Servidor Selecionado) -->
+            <div id="home-container" class="hidden flex-1 flex flex-col min-w-0 select-text">
+                <!-- Cabeçalho da Home -->
+                <div class="h-12 border-b border-discord-darkest flex items-center px-4 flex-shrink-0 bg-discord-dark shadow-sm lg:hidden">
+                    <button onclick="event.stopPropagation(); toggleMobileSidebar()" class="p-1 mr-2 text-gray-400 hover:text-white rounded focus:outline-none" title="Menu">
+                        <i data-lucide="menu" class="w-6 h-6"></i>
+                    </button>
+                    <span class="text-white font-bold text-sm">Discord Clan</span>
+                </div>
+                
+                <!-- Conteúdo da Home -->
+                <div class="flex-1 flex flex-col items-center justify-center text-center p-8">
+                    <div class="max-w-[480px] space-y-6">
+                        <div class="w-24 h-24 bg-discord-brand bg-opacity-10 text-discord-brand rounded-full flex items-center justify-center mx-auto shadow-2xl">
                         <i data-lucide="message-square" class="w-12 h-12"></i>
                     </div>
                     <div class="space-y-2">
@@ -418,6 +438,34 @@
                     Copiar
                 </button>
             </div>
+        </div>
+    </div>
+
+    <!-- Menu de Contexto do Usuário na Chamada de Voz -->
+    <div id="user-context-menu" class="hidden fixed z-50 bg-discord-darkest border border-gray-800 rounded shadow-2xl p-2 text-sm text-gray-300 w-52 space-y-1">
+        <!-- Volume do Usuário -->
+        <div class="px-2 py-1.5 border-b border-gray-800 pb-2.5">
+            <div class="flex justify-between text-[11px] text-gray-400 mb-1">
+                <span>Volume do Usuário</span>
+                <span id="context-volume-val" class="font-bold text-white">100%</span>
+            </div>
+            <input type="range" id="context-volume-slider" min="0" max="200" value="100" class="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-discord-brand">
+        </div>
+        
+        <!-- Opções de Moderação de Voz -->
+        <div id="context-mod-options" class="flex flex-col space-y-0.5 pt-1">
+            <button onclick="toggleServerMuteFromMenu()" class="w-full flex items-center justify-between px-2 py-1.5 rounded hover:bg-discord-light text-discord-red font-medium transition-colors text-left">
+                <span>Server Mute</span>
+                <i id="context-mute-check" data-lucide="square" class="w-4 h-4 text-gray-500"></i>
+            </button>
+            <button onclick="toggleServerDeafenFromMenu()" class="w-full flex items-center justify-between px-2 py-1.5 rounded hover:bg-discord-light text-discord-red font-medium transition-colors text-left">
+                <span>Server Deafen</span>
+                <i id="context-deafen-check" data-lucide="square" class="w-4 h-4 text-gray-500"></i>
+            </button>
+            <button onclick="disconnectUserFromMenu()" class="w-full flex items-center justify-between px-2 py-1.5 rounded hover:bg-discord-light text-discord-red font-medium transition-colors text-left">
+                <span>Desconectar da Call</span>
+                <i data-lucide="phone-off" class="w-4 h-4 text-discord-red"></i>
+            </button>
         </div>
     </div>
 
