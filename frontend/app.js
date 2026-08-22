@@ -195,6 +195,13 @@ function toggleAuthMode() {
     }
 }
 
+function openSystemLogs() {
+    const token = localStorage.getItem("token");
+    if (token) {
+        window.open(`${API_URL}/api/logs?token=${token}`, '_blank');
+    }
+}
+
 function logout() {
     // Desconectar qualquer call de voz ativa
     disconnectVoice();

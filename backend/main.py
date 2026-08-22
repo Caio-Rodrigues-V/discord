@@ -6,7 +6,7 @@ import hashlib
 import secrets
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 from typing import Dict, List, Set, Any
 
@@ -17,6 +17,27 @@ from backend.database import (
     save_message, get_channel_messages, add_user_to_default_server,
     get_db, get_cursor, qry
 )
+
+import logging
+from collections import deque
+
+# Buffer de logs em memória (últimos 1000 logs)
+log_buffer = deque(maxlen=1000)
+
+class DequeHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            log_buffer.append(f"[{record.levelname}] {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {msg}")
+        except Exception:
+            self.handleError(record)
+
+deque_handler = DequeHandler()
+deque_handler.setFormatter(logging.Formatter('%(name)s: %(message)s'))
+# Adicionar ao root logger
+logging.getLogger().addHandler(deque_handler)
+logging.getLogger().setLevel(logging.INFO)
+
 
 SECRET_KEY = "discord-clan-secret-key-super-secure-12345"
 ALGORITHM = "HS256"
@@ -228,6 +249,19 @@ def get_config():
             ]
         }
     }
+
+
+@app.get("/api/logs")
+def get_logs(token: str = Query(...)):
+    user_data = decode_token(token)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido ou expirado"
+        )
+    # Retornar como texto plano para fácil leitura no navegador
+    log_text = "\n".join(log_buffer)
+    return PlainTextResponse(log_text)
 
 
 # --- Roteamento de Arquivos Estáticos do Frontend ---
