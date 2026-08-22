@@ -938,6 +938,14 @@ async function handleWebRTCSignal(senderId, signal) {
                 await pc.setRemoteDescription(desc);
             }
             
+            // Processar candidatos acumulados na fila
+            if (pc.iceCandidatesQueue) {
+                for (const candidate of pc.iceCandidatesQueue) {
+                    await pc.addIceCandidate(candidate).catch(e => console.warn("Erro ao esvaziar fila de cand:", e));
+                }
+                pc.iceCandidatesQueue = [];
+            }
+            
             if (desc.type === "offer") {
                 await pc.setLocalDescription();
                 sendWsMessage({
@@ -947,10 +955,15 @@ async function handleWebRTCSignal(senderId, signal) {
                 });
             }
         } else if (signal.candidate) {
-            try {
-                await pc.addIceCandidate(signal.candidate);
-            } catch (err) {
-                console.warn("Falha ao adicionar ICE candidate:", err);
+            if (!pc.remoteDescription) {
+                if (!pc.iceCandidatesQueue) pc.iceCandidatesQueue = [];
+                pc.iceCandidatesQueue.push(signal.candidate);
+            } else {
+                try {
+                    await pc.addIceCandidate(signal.candidate);
+                } catch (err) {
+                    console.warn("Falha ao adicionar ICE candidate:", err);
+                }
             }
         }
     } catch (err) {
