@@ -861,6 +861,7 @@ function disconnectVoice() {
 
 function createPeerConnection(peerId, isInitiator) {
     const pc = new RTCPeerConnection(rtcConfig);
+    pc.initialNegotiationDone = false;
     peerConnections[peerId] = pc;
     
     // Adicionar tracks locais
@@ -926,6 +927,10 @@ function createPeerConnection(peerId, isInitiator) {
     const polite = currentUser.id < peerId; // Um será polite e outro impolite
     
     pc.onnegotiationneeded = async () => {
+        if (!isInitiator && !pc.initialNegotiationDone) {
+            console.log(`[WebRTC] Ignorando onnegotiationneeded inicial para peer ${peerId} porque somos passivos.`);
+            return;
+        }
         try {
             makingOffer = true;
             await pc.setLocalDescription();
@@ -990,6 +995,9 @@ async function handleWebRTCSignal(senderId, signal) {
                     target_id: senderId,
                     signal: { description: pc.localDescription }
                 });
+                pc.initialNegotiationDone = true;
+            } else if (desc.type === "answer") {
+                pc.initialNegotiationDone = true;
             }
         } else if (signal.candidate) {
             if (!pc.remoteDescription) {
