@@ -413,6 +413,24 @@ function handleWebSocketMessage(msg) {
             }
             renderChannels();
             break;
+            
+        case "voice_state_update":
+            const stateUser = activeVoiceUsers.find(u => u.id === msg.user_id);
+            if (stateUser) {
+                stateUser.muted = msg.muted;
+                stateUser.deafened = msg.deafened;
+                renderVoiceGrid();
+            }
+            for (const cid in voiceStates) {
+                const u = voiceStates[cid].find(u => u.id === msg.user_id);
+                if (u) {
+                    u.muted = msg.muted;
+                    u.deafened = msg.deafened;
+                    break;
+                }
+            }
+            renderChannels();
+            break;
     }
 }
 
@@ -584,15 +602,27 @@ function renderChannels() {
                     // Indicadores de status
                     if (u.sharingScreen) {
                         const live = document.createElement("span");
-                        live.className = "bg-discord-red text-[8px] px-1 rounded font-bold text-white uppercase tracking-wider flex-shrink-0";
+                        live.className = "bg-discord-red text-[8px] px-1 rounded font-bold text-white uppercase tracking-wider flex-shrink-0 mr-1";
                         live.innerText = "Ao vivo";
                         uRow.appendChild(live);
+                    }
+                    
+                    if (u.deafened) {
+                        const deafenIcon = document.createElement("i");
+                        deafenIcon.setAttribute("data-lucide", "volume-x");
+                        deafenIcon.className = "w-3 h-3 text-discord-red ml-1 flex-shrink-0";
+                        uRow.appendChild(deafenIcon);
+                    } else if (u.muted) {
+                        const muteMicIcon = document.createElement("i");
+                        muteMicIcon.setAttribute("data-lucide", "mic-off");
+                        muteMicIcon.className = "w-3 h-3 text-discord-red ml-1 flex-shrink-0";
+                        uRow.appendChild(muteMicIcon);
                     }
                     
                     if (locallyMutedUsers.has(u.id)) {
                         const muteIcon = document.createElement("i");
                         muteIcon.setAttribute("data-lucide", "volume-x");
-                        muteIcon.className = "w-3 h-3 text-discord-red ml-1 flex-shrink-0";
+                        muteIcon.className = "w-3 h-3 text-discord-red ml-1 flex-shrink-0 opacity-60";
                         uRow.appendChild(muteIcon);
                     }
                     
@@ -1173,6 +1203,15 @@ function toggleMic() {
     });
     
     lucide.createIcons();
+    
+    // Sincronizar estado com o servidor se estiver em call
+    if (activeVoiceChannelId) {
+        sendWsMessage({
+            type: "voice_state_update",
+            muted: isMuted,
+            deafened: isDeafened
+        });
+    }
 }
 
 function toggleDeafen() {
@@ -1186,7 +1225,7 @@ function toggleDeafen() {
     }
     
     // Muta todos os áudios recebidos dos peers
-    const audios = document.querySelectorAll("audio[id^='audio-peer-']");
+    const audios = document.querySelectorAll("audio");
     audios.forEach(audio => {
         audio.muted = isDeafened;
     });
@@ -1203,6 +1242,15 @@ function toggleDeafen() {
         }
     }
     lucide.createIcons();
+    
+    // Sincronizar estado com o servidor se estiver em call
+    if (activeVoiceChannelId) {
+        sendWsMessage({
+            type: "voice_state_update",
+            muted: isMuted,
+            deafened: isDeafened
+        });
+    }
 }
 
 // --- Renderização da UI de Voz ---
@@ -1308,6 +1356,7 @@ function createVoiceUserCard(userId, isLarge) {
             <span class="truncate">${user.username}</span>
             ${user.speaking ? '<i data-lucide="mic" class="w-3.5 h-3.5 text-discord-green"></i>' : ''}
             ${user.sharingScreen ? '<span class="bg-discord-red text-[8px] px-1 rounded font-bold uppercase tracking-wider">Ao Vivo</span>' : ''}
+            ${user.deafened ? '<i data-lucide="volume-x" class="w-3.5 h-3.5 text-discord-red" title="Ensurdecido"></i>' : (user.muted ? '<i data-lucide="mic-off" class="w-3.5 h-3.5 text-discord-red" title="Mutado"></i>' : '')}
             ${user.id !== currentUser.id ? `
                 <button onclick="event.stopPropagation(); toggleLocalMute(${user.id})" class="p-0.5 rounded hover:bg-gray-700 transition-colors ml-1" title="Silenciar usuário para você">
                     <i data-lucide="${locallyMutedUsers.has(user.id) ? 'volume-x' : 'volume-2'}" class="w-3.5 h-3.5 ${locallyMutedUsers.has(user.id) ? 'text-discord-red' : 'text-gray-400 hover:text-white'}"></i>

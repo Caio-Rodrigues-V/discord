@@ -253,6 +253,8 @@ class ConnectionManager:
         self.active_connections: Dict[int, WebSocket] = {}
         # Mapeamento: user_id -> dict com info do usuário (username, avatar_color)
         self.user_info: Dict[int, dict] = {}
+        # Mapeamento: user_id -> dict com configurações de voz (muted, deafened)
+        self.user_voice_settings: Dict[int, Dict[str, bool]] = {}
         
         # Mapeamento: channel_id (voz) -> lista de user_ids conectados na call
         self.voice_channels: Dict[int, List[int]] = {}
@@ -267,6 +269,10 @@ class ConnectionManager:
             "username": username,
             "avatar_color": avatar_color
         }
+        self.user_voice_settings[user_id] = {
+            "muted": False,
+            "deafened": False
+        }
         print(f"WebSocket conectado: {username} (ID: {user_id})")
         
         # Enviar estados de canais de voz iniciais
@@ -278,7 +284,14 @@ class ConnectionManager:
     def get_all_voice_states(self) -> dict:
         states = {}
         for cid, uids in self.voice_channels.items():
-            states[cid] = [self.user_info[uid] for uid in uids if uid in self.user_info]
+            states[cid] = []
+            for uid in uids:
+                if uid in self.user_info:
+                    info = dict(self.user_info[uid])
+                    settings = self.user_voice_settings.get(uid, {"muted": False, "deafened": False})
+                    info["muted"] = settings["muted"]
+                    info["deafened"] = settings["deafened"]
+                    states[cid].append(info)
         return states
 
     def disconnect(self, user_id: int):
@@ -286,6 +299,8 @@ class ConnectionManager:
             del self.active_connections[user_id]
         if user_id in self.user_info:
             del self.user_info[user_id]
+        if user_id in self.user_voice_settings:
+            del self.user_voice_settings[user_id]
         
         # Se estava em uma call, remover dela
         self.leave_voice_channel_if_any(user_id)
@@ -400,7 +415,11 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                 current_members = []
                 for uid in manager.voice_channels[channel_id]:
                     if uid in manager.user_info:
-                        current_members.append(manager.user_info[uid])
+                        info = dict(manager.user_info[uid])
+                        settings = manager.user_voice_settings.get(uid, {"muted": False, "deafened": False})
+                        info["muted"] = settings["muted"]
+                        info["deafened"] = settings["deafened"]
+                        current_members.append(info)
                 
                 # Responder ao novo usuário
                 await manager.send_personal_message({
@@ -410,11 +429,16 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                 }, user_id)
                 
                 # Notificar TODO MUNDO no servidor que este usuário entrou
+                user_joined_info = dict(manager.user_info[user_id])
+                settings = manager.user_voice_settings.get(user_id, {"muted": False, "deafened": False})
+                user_joined_info["muted"] = settings["muted"]
+                user_joined_info["deafened"] = settings["deafened"]
+                
                 all_connected = list(manager.active_connections.keys())
                 await manager.broadcast_to_users({
                     "type": "voice_user_joined",
                     "channel_id": channel_id,
-                    "user": manager.user_info[user_id]
+                    "user": user_joined_info
                 }, all_connected)
                 
             elif msg_type == "voice_leave":
@@ -463,6 +487,21 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                         "user_id": user_id,
                         "sharing": sharing
                     }, all_connected)
+                    
+            elif msg_type == "voice_state_update":
+                muted = bool(message.get("muted"))
+                deafened = bool(message.get("deafened"))
+                manager.user_voice_settings[user_id] = {
+                    "muted": muted,
+                    "deafened": deafened
+                }
+                all_connected = list(manager.active_connections.keys())
+                await manager.broadcast_to_users({
+                    "type": "voice_state_update",
+                    "user_id": user_id,
+                    "muted": muted,
+                    "deafened": deafened
+                }, all_connected)
 
     except WebSocketDisconnect:
         channel_id, remaining = manager.leave_voice_channel_if_any(user_id)
