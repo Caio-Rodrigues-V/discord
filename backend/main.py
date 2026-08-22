@@ -207,6 +207,29 @@ def list_messages(channel_id: int, token: str = Query(...)):
     return get_channel_messages(channel_id)
 
 
+@app.get("/api/config")
+def get_config():
+    return {
+        "rtcConfig": {
+            "iceServers": [
+                { "urls": "stun:stun.l.google.com:19302" },
+                { "urls": "stun:stun1.l.google.com:19302" },
+                { "urls": "stun:stun2.l.google.com:19302" },
+                { 
+                    "urls": "turn:" + os.getenv("TURN_URL", "openrelay.metered.ca:443"),
+                    "username": os.getenv("TURN_USERNAME", "openrelayproject"),
+                    "credential": os.getenv("TURN_CREDENTIAL", "openrelayproject")
+                },
+                { 
+                    "urls": "turn:" + os.getenv("TURN_URL", "openrelay.metered.ca:443") + "?transport=tcp",
+                    "username": os.getenv("TURN_USERNAME", "openrelayproject"),
+                    "credential": os.getenv("TURN_CREDENTIAL", "openrelayproject")
+                }
+            ]
+        }
+    }
+
+
 # --- Roteamento de Arquivos Estáticos do Frontend ---
 
 @app.get("/")

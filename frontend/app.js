@@ -25,24 +25,26 @@ let speakingLoopActive = false;
 let focusedUserId = null; // ID do usuário que está em foco na call (se houver)
 let locallyMutedUsers = new Set(); // IDs dos usuários mutados localmente
 
-const rtcConfig = {
+let rtcConfig = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:openrelay.metered.ca:80' },
-        { 
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        { 
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        }
+        { urls: 'stun:stun2.l.google.com:19302' }
     ]
 };
+
+async function loadConfig() {
+    try {
+        const res = await fetch(`${API_URL}/api/config`);
+        if (res.ok) {
+            const data = await res.json();
+            rtcConfig = data.rtcConfig;
+            console.log("Configurações WebRTC carregadas com sucesso.");
+        }
+    } catch (e) {
+        console.error("Erro ao carregar configurações de RTC:", e);
+    }
+}
 
 // --- Sistema de Visualização (Abas) ---
 function showView(viewName) {
@@ -65,7 +67,8 @@ function showView(viewName) {
 }
 
 // --- Inicialização ---
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+    await loadConfig();
     checkAuth();
     setupEventListeners();
     lucide.createIcons();
