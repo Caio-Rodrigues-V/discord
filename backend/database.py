@@ -7,8 +7,8 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 IS_POSTGRES = DATABASE_URL is not None
 
 if IS_POSTGRES:
-    import psycopg2
-    import psycopg2.extras
+    import psycopg
+    import psycopg.rows
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 else:
@@ -18,7 +18,7 @@ else:
 
 def get_db():
     if IS_POSTGRES:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = psycopg.connect(DATABASE_URL)
         return conn
     else:
         conn = sqlite3.connect(DB_PATH)
@@ -28,7 +28,7 @@ def get_db():
 
 def get_cursor(conn):
     if IS_POSTGRES:
-        return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        return conn.cursor(row_factory=psycopg.rows.dict_row)
     else:
         return conn.cursor()
 
