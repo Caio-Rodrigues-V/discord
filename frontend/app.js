@@ -233,9 +233,10 @@ async function showApp() {
     if (currentUser.avatar_url) {
         avatarCircle.innerHTML = `<img src="${currentUser.avatar_url}" class="w-8 h-8 rounded-full object-cover">`;
     } else {
-        avatarCircle.innerText = currentUser.username.slice(0, 2).toUpperCase();
+        const displayName = currentUser.display_name || currentUser.username;
+        avatarCircle.innerText = displayName.slice(0, 2).toUpperCase();
     }
-    document.getElementById("user-panel-name").innerText = currentUser.username;
+    document.getElementById("user-panel-name").innerText = currentUser.display_name || currentUser.username;
     
     // Inicializar WebSocket e carregar dados
     connectWebSocket();
@@ -513,6 +514,7 @@ function handleWebSocketMessage(msg) {
                 currentServerMembers[memberIdx] = {
                     ...currentServerMembers[memberIdx],
                     username: updatedUser.username,
+                    display_name: updatedUser.display_name,
                     avatar_color: updatedUser.avatar_color,
                     avatar_url: updatedUser.avatar_url,
                     custom_status: updatedUser.custom_status
@@ -525,6 +527,7 @@ function handleWebSocketMessage(msg) {
                 activeVoiceUsers[activeCallUserIdx] = {
                     ...activeVoiceUsers[activeCallUserIdx],
                     username: updatedUser.username,
+                    display_name: updatedUser.display_name,
                     avatar_color: updatedUser.avatar_color,
                     avatar_url: updatedUser.avatar_url,
                     custom_status: updatedUser.custom_status
@@ -537,6 +540,7 @@ function handleWebSocketMessage(msg) {
                 const u = voiceStates[cid].find(user => user.id === updatedUser.id);
                 if (u) {
                     u.username = updatedUser.username;
+                    u.display_name = updatedUser.display_name;
                     u.avatar_color = updatedUser.avatar_color;
                     u.avatar_url = updatedUser.avatar_url;
                 }
@@ -545,19 +549,22 @@ function handleWebSocketMessage(msg) {
             
             if (updatedUser.id === currentUser.id) {
                 currentUser.username = updatedUser.username;
+                currentUser.display_name = updatedUser.display_name;
                 currentUser.avatar_color = updatedUser.avatar_color;
                 currentUser.avatar_url = updatedUser.avatar_url;
                 currentUser.custom_status = updatedUser.custom_status;
                 
                 localStorage.setItem("user", JSON.stringify(currentUser));
                 
-                document.getElementById("user-panel-name").innerText = currentUser.username;
+                const displayName = currentUser.display_name || currentUser.username;
+                document.getElementById("user-panel-name").innerText = displayName;
                 const avatar = document.getElementById("user-avatar-circle");
                 if (avatar) {
                     avatar.style.backgroundColor = currentUser.avatar_color;
-                    avatar.innerText = currentUser.username.slice(0, 2).toUpperCase();
                     if (currentUser.avatar_url) {
                         avatar.innerHTML = `<img src="${currentUser.avatar_url}" class="w-8 h-8 rounded-full object-cover">`;
+                    } else {
+                        avatar.innerText = displayName.slice(0, 2).toUpperCase();
                     }
                 }
             }
@@ -828,7 +835,8 @@ function renderChannels() {
                     } else {
                         uAvatar = document.createElement("div");
                         uAvatar.className = "w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white flex-shrink-0";
-                        uAvatar.innerText = u.username.slice(0, 2).toUpperCase();
+                        const displayName = u.display_name || u.username;
+                        uAvatar.innerText = displayName.slice(0, 2).toUpperCase();
                         uAvatar.style.backgroundColor = u.avatar_color;
                     }
                     
@@ -839,7 +847,7 @@ function renderChannels() {
                     
                     const uName = document.createElement("span");
                     uName.className = "truncate flex-1";
-                    uName.innerText = u.username;
+                    uName.innerText = u.display_name || u.username;
                     uRow.appendChild(uName);
                     
                     // Indicadores de status
@@ -937,7 +945,8 @@ function createMemberRow(m) {
     const row = document.createElement("div");
     row.className = "flex items-center space-x-2.5 p-1.5 rounded hover:bg-discord-light cursor-pointer text-gray-300 hover:text-white";
     
-    const initials = m.username.slice(0, 2).toUpperCase();
+    const displayName = m.display_name || m.username;
+    const initials = displayName.slice(0, 2).toUpperCase();
     
     row.innerHTML = `
         <div class="relative flex-shrink-0">
@@ -951,7 +960,7 @@ function createMemberRow(m) {
             <span class="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full border-2 border-discord-dark ${m.online ? 'bg-discord-green' : 'bg-gray-500'}"></span>
         </div>
         <div class="flex flex-col min-w-0 flex-1">
-            <span class="text-sm font-medium truncate ${m.online ? 'text-gray-200' : 'text-gray-400'}">${m.username}</span>
+            <span class="text-sm font-medium truncate ${m.online ? 'text-gray-200' : 'text-gray-400'}">${displayName}</span>
             ${m.custom_status ? `<span class="text-[10px] text-gray-500 truncate" title="${m.custom_status}">${m.custom_status}</span>` : ''}
         </div>
     `;
@@ -998,19 +1007,26 @@ async function selectTextChannel(channelId, channelName) {
 function appendChatMessage(msg) {
     const container = document.getElementById("messages-container");
     
-    const initials = msg.username.slice(0, 2).toUpperCase();
+    const displayName = msg.display_name || msg.username;
+    const initials = displayName.slice(0, 2).toUpperCase();
     const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
     const msgEl = document.createElement("div");
     msgEl.className = "flex items-start space-x-4 select-text hover:bg-discord-dark hover:bg-opacity-20 px-2 py-1 rounded transition-colors";
     
     msgEl.innerHTML = `
-        <div class="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0" style="background-color: ${msg.avatar_color}">
-            ${initials}
+        <div class="relative flex-shrink-0">
+            ${msg.avatar_url ? `
+                <img src="${msg.avatar_url}" class="w-10 h-10 rounded-full object-cover">
+            ` : `
+                <div class="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0" style="background-color: ${msg.avatar_color}">
+                    ${initials}
+                </div>
+            `}
         </div>
         <div class="flex flex-col min-w-0">
             <div class="flex items-baseline space-x-2">
-                <span class="font-bold text-white text-sm hover:underline cursor-pointer">${msg.username}</span>
+                <span class="font-bold text-white text-sm hover:underline cursor-pointer">${displayName}</span>
                 <span class="text-[10px] text-gray-400 font-medium">${time}</span>
             </div>
             <p class="text-gray-300 text-sm whitespace-pre-wrap break-all mt-0.5">${msg.content}</p>
@@ -1667,7 +1683,8 @@ function createVoiceUserCard(userId, isLarge) {
     const user = activeVoiceUsers.find(u => u.id === userId);
     if (!user) return document.createElement("div");
     
-    const initials = user.username.slice(0, 2).toUpperCase();
+    const displayName = user.display_name || user.username;
+    const initials = displayName.slice(0, 2).toUpperCase();
     
     const card = document.createElement("div");
     card.className = `voice-card relative bg-discord-voiceCard rounded-lg flex flex-col items-center justify-center border border-gray-800 overflow-hidden cursor-pointer ${isLarge ? 'flex-1 h-full min-h-[300px]' : 'h-40 md:h-48'}`;
@@ -1699,7 +1716,7 @@ function createVoiceUserCard(userId, isLarge) {
         
         <!-- Badge com Nome de Usuário -->
         <div class="absolute bottom-2 left-2 bg-black bg-opacity-60 px-2 py-1 rounded text-xs text-white font-medium flex items-center space-x-1.5 max-w-[85%]">
-            <span class="truncate">${user.username}</span>
+            <span class="truncate">${displayName}</span>
             ${user.speaking ? '<i data-lucide="mic" class="w-3.5 h-3.5 text-discord-green"></i>' : ''}
             ${user.sharingScreen ? '<span class="bg-discord-red text-[8px] px-1 rounded font-bold uppercase tracking-wider">Ao Vivo</span>' : ''}
             ${(user.serverDeafened || user.deafened) ? '<i data-lucide="volume-x" class="w-3.5 h-3.5 text-discord-red" title="Ensurdecido"></i>' : ((user.serverMuted || user.muted) ? '<i data-lucide="mic-off" class="w-3.5 h-3.5 text-discord-red" title="Mutado"></i>' : '')}
@@ -2128,7 +2145,7 @@ function readAndResizeImage(file) {
 function populateUserSettings() {
     if (!currentUser) return;
     
-    document.getElementById("settings-username").value = currentUser.username;
+    document.getElementById("settings-display-name").value = currentUser.display_name || currentUser.username;
     document.getElementById("settings-avatar-url").value = currentUser.avatar_url && !currentUser.avatar_url.startsWith("data:") ? currentUser.avatar_url : "";
     document.getElementById("settings-custom-status").value = currentUser.custom_status || "";
     
@@ -2156,7 +2173,7 @@ async function handleSettingsSubmit(e) {
     e.preventDefault();
     if (!currentUser) return;
     
-    const username = document.getElementById("settings-username").value.trim();
+    const displayName = document.getElementById("settings-display-name").value.trim();
     const customStatus = document.getElementById("settings-custom-status").value.trim();
     let avatarUrl = document.getElementById("settings-avatar-url").value.trim();
     
@@ -2176,7 +2193,7 @@ async function handleSettingsSubmit(e) {
         }
     }
     
-    if (!username) return;
+    if (!displayName) return;
     
     try {
         const res = await fetch(`${API_URL}/api/users/me?token=${currentUser.token}`, {
@@ -2185,7 +2202,7 @@ async function handleSettingsSubmit(e) {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                username: username,
+                display_name: displayName,
                 avatar_color: selectedSettingsColor,
                 avatar_url: avatarUrl,
                 custom_status: customStatus
@@ -2201,12 +2218,6 @@ async function handleSettingsSubmit(e) {
             const data = await res.json();
             alert(data.detail || "Erro ao salvar configurações.");
             return;
-        }
-        
-        const responseData = await res.json();
-        if (responseData.token) {
-            currentUser.token = responseData.token;
-            localStorage.setItem("token", responseData.token);
         }
         
         toggleModal("user-settings-modal", false);

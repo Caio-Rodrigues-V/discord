@@ -151,7 +151,7 @@ def register(data: RegisterModel):
     token = create_access_token(user_id, data.username)
     return {
         "token": token,
-        "user": {"id": user_id, "username": data.username, "avatar_color": avatar_color, "avatar_url": None, "custom_status": None}
+        "user": {"id": user_id, "username": data.username, "display_name": None, "avatar_color": avatar_color, "avatar_url": None, "custom_status": None}
     }
 
 @app.post("/api/auth/login")
@@ -169,6 +169,7 @@ def login(data: LoginModel):
         "user": {
             "id": user["id"],
             "username": user["username"],
+            "display_name": user.get("display_name"),
             "avatar_color": user["avatar_color"],
             "avatar_url": user.get("avatar_url"),
             "custom_status": user.get("custom_status")
@@ -183,7 +184,7 @@ def get_me(token: str = Query(...)):
 
 
 class UpdateProfileModel(BaseModel):
-    username: Optional[str] = None
+    display_name: Optional[str] = None
     avatar_color: Optional[str] = None
     avatar_url: Optional[str] = None
     custom_status: Optional[str] = None
@@ -196,11 +197,9 @@ async def update_profile(data: UpdateProfileModel, token: str = Query(...)):
     cursor = get_cursor(conn)
     
     try:
-        if data.username and data.username != user["username"]:
-            cursor.execute(qry("SELECT id FROM users WHERE username = ? AND id != ?"), (data.username, user["user_id"]))
-            if cursor.fetchone():
-                raise HTTPException(status_code=400, detail="Nome de usuário já está em uso.")
-            cursor.execute(qry("UPDATE users SET username = ? WHERE id = ?"), (data.username, user["user_id"]))
+        if data.display_name is not None:
+            val = data.display_name.strip() if data.display_name.strip() else None
+            cursor.execute(qry("UPDATE users SET display_name = ? WHERE id = ?"), (val, user["user_id"]))
             
         if data.avatar_color:
             cursor.execute(qry("UPDATE users SET avatar_color = ? WHERE id = ?"), (data.avatar_color, user["user_id"]))
@@ -224,15 +223,11 @@ async def update_profile(data: UpdateProfileModel, token: str = Query(...)):
         
     updated = get_user_by_id(user["user_id"])
     
-    # Se o nome de usuário mudou, gerar um novo token de acesso
-    new_token = None
-    if data.username and data.username != user["username"]:
-        new_token = create_access_token(updated["id"], updated["username"])
-    
     # Atualizar em tempo real na memória do ConnectionManager para chamadas ativas
     u_id = user["user_id"]
     if u_id in manager.user_info:
         manager.user_info[u_id]["username"] = updated["username"]
+        manager.user_info[u_id]["display_name"] = updated.get("display_name")
         manager.user_info[u_id]["avatar_color"] = updated["avatar_color"]
         manager.user_info[u_id]["avatar_url"] = updated.get("avatar_url")
         
@@ -245,7 +240,7 @@ async def update_profile(data: UpdateProfileModel, token: str = Query(...)):
     
     return {
         "user": updated,
-        "token": new_token
+        "token": None
     }
 
 

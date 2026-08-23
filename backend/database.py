@@ -154,6 +154,7 @@ def init_db():
         if IS_POSTGRES:
             cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;")
             cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_status VARCHAR(255);")
+            cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);")
         else:
             try:
                 cursor.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT;")
@@ -161,6 +162,10 @@ def init_db():
                 pass
             try:
                 cursor.execute("ALTER TABLE users ADD COLUMN custom_status TEXT;")
+            except Exception:
+                pass
+            try:
+                cursor.execute("ALTER TABLE users ADD COLUMN display_name TEXT;")
             except Exception:
                 pass
     except Exception as e:
@@ -204,7 +209,7 @@ def get_user_by_username(username):
 def get_user_by_id(user_id):
     conn = get_db()
     cursor = get_cursor(conn)
-    cursor.execute(qry("SELECT id, username, avatar_color, avatar_url, custom_status, created_at FROM users WHERE id = ?"), (user_id,))
+    cursor.execute(qry("SELECT id, username, display_name, avatar_color, avatar_url, custom_status, created_at FROM users WHERE id = ?"), (user_id,))
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
@@ -324,11 +329,11 @@ def get_server_members(server_id):
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute(qry("""
-        SELECT u.id, u.username, u.avatar_color, u.avatar_url, u.custom_status
+        SELECT u.id, u.username, u.display_name, u.avatar_color, u.avatar_url, u.custom_status
         FROM users u
         JOIN server_members sm ON u.id = sm.user_id
         WHERE sm.server_id = ?
-        ORDER BY u.username ASC
+        ORDER BY COALESCE(u.display_name, u.username) ASC
     """), (server_id,))
     rows = cursor.fetchall()
     conn.close()
@@ -391,7 +396,7 @@ def save_message(channel_id, user_id, content):
             created_at = cursor.fetchone()["created_at"]
             
         # Obter dados do autor da mensagem
-        cursor.execute(qry("SELECT username, avatar_color FROM users WHERE id = ?"), (user_id,))
+        cursor.execute(qry("SELECT username, display_name, avatar_color, avatar_url FROM users WHERE id = ?"), (user_id,))
         user = cursor.fetchone()
         
         conn.commit()
@@ -402,7 +407,9 @@ def save_message(channel_id, user_id, content):
             "content": content,
             "created_at": str(created_at),
             "username": user["username"],
-            "avatar_color": user["avatar_color"]
+            "display_name": user.get("display_name"),
+            "avatar_color": user["avatar_color"],
+            "avatar_url": user.get("avatar_url")
         }
     except Exception as e:
         conn.rollback()
@@ -415,7 +422,7 @@ def get_channel_messages(channel_id, limit=100):
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute(qry("""
-        SELECT m.id, m.channel_id, m.user_id, m.content, m.created_at, u.username, u.avatar_color
+        SELECT m.id, m.channel_id, m.user_id, m.content, m.created_at, u.username, u.display_name, u.avatar_color, u.avatar_url
         FROM messages m
         JOIN users u ON m.user_id = u.id
         WHERE m.channel_id = ?
