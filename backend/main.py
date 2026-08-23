@@ -334,8 +334,14 @@ def list_messages(channel_id: int, token: str = Query(...)):
 
 @app.get("/api/dms")
 def list_dms(token: str = Query(...)):
-    user = get_current_user_from_header(token)
-    return get_user_dm_channels(user["user_id"])
+    try:
+        user = get_current_user_from_header(token)
+        return get_user_dm_channels(user["user_id"])
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print("Erro em /api/dms:", tb)
+        raise HTTPException(status_code=500, detail=f"Erro interno no servidor: {str(e)}\n{tb}")
 
 @app.post("/api/dms")
 def create_dm(data: CreateDMModel, token: str = Query(...)):

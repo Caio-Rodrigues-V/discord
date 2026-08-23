@@ -51,6 +51,9 @@ def init_db():
             username VARCHAR(255) UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             avatar_color VARCHAR(50) NOT NULL,
+            display_name VARCHAR(255),
+            avatar_url TEXT,
+            custom_status VARCHAR(255),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
@@ -117,6 +120,9 @@ def init_db():
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             avatar_color TEXT NOT NULL,
+            display_name TEXT,
+            avatar_url TEXT,
+            custom_status TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
