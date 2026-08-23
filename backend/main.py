@@ -176,6 +176,12 @@ def login(data: LoginModel):
     }
 
 
+@app.get("/api/users/me")
+def get_me(token: str = Query(...)):
+    user = get_current_user_from_header(token)
+    return get_user_by_id(user["user_id"])
+
+
 class UpdateProfileModel(BaseModel):
     username: Optional[str] = None
     avatar_color: Optional[str] = None
@@ -218,6 +224,11 @@ async def update_profile(data: UpdateProfileModel, token: str = Query(...)):
         
     updated = get_user_by_id(user["user_id"])
     
+    # Se o nome de usuário mudou, gerar um novo token de acesso
+    new_token = None
+    if data.username and data.username != user["username"]:
+        new_token = create_access_token(updated["id"], updated["username"])
+    
     # Transmitir a alteração para todos os usuários conectados
     all_connected = list(manager.active_connections.keys())
     await manager.broadcast_to_users({
@@ -225,7 +236,10 @@ async def update_profile(data: UpdateProfileModel, token: str = Query(...)):
         "user": updated
     }, all_connected)
     
-    return updated
+    return {
+        "user": updated,
+        "token": new_token
+    }
 
 
 # --- Rotas de Servidores ---

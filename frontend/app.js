@@ -211,9 +211,21 @@ function showAuth() {
     document.getElementById("app-screen").classList.add("hidden");
 }
 
-function showApp() {
+async function showApp() {
     document.getElementById("auth-screen").classList.add("hidden");
     document.getElementById("app-screen").classList.remove("hidden");
+    
+    // Buscar perfil mais recente do backend
+    try {
+        const res = await fetch(`${API_URL}/api/users/me?token=${currentUser.token}`);
+        if (res.ok) {
+            const latestUser = await res.json();
+            currentUser = { ...currentUser, ...latestUser };
+            localStorage.setItem("user", JSON.stringify(currentUser));
+        }
+    } catch (e) {
+        console.error("Erro ao sincronizar perfil:", e);
+    }
     
     // Configurar Painel do Usuário no rodapé
     const avatarCircle = document.getElementById("user-avatar-circle");
@@ -2033,6 +2045,12 @@ function handleAvatarFileSelect(e) {
 function readAndResizeImage(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
+        if (file.type === "image/gif") {
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+            return;
+        }
         reader.onload = (e) => {
             const img = new Image();
             img.onload = () => {
@@ -2145,6 +2163,12 @@ async function handleSettingsSubmit(e) {
             const data = await res.json();
             alert(data.detail || "Erro ao salvar configurações.");
             return;
+        }
+        
+        const responseData = await res.json();
+        if (responseData.token) {
+            currentUser.token = responseData.token;
+            localStorage.setItem("token", responseData.token);
         }
         
         toggleModal("user-settings-modal", false);
