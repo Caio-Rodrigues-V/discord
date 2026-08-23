@@ -2022,12 +2022,62 @@ function updatePingUI(rtt) {
 // --- Configurações de Usuário (Perfil) ---
 let selectedSettingsColor = "";
 
+function handleAvatarFileSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    document.getElementById("settings-avatar-filename").innerText = file.name;
+    document.getElementById("settings-avatar-url").value = "";
+}
+
+function readAndResizeImage(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement("canvas");
+                const max_size = 256;
+                let width = img.width;
+                let height = img.height;
+                
+                if (width > height) {
+                    if (width > max_size) {
+                        height *= max_size / width;
+                        width = max_size;
+                    }
+                } else {
+                    if (height > max_size) {
+                        width *= max_size / height;
+                        height = max_size;
+                    }
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                const base64 = canvas.toDataURL("image/jpeg", 0.85);
+                resolve(base64);
+            };
+            img.onerror = reject;
+            img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
 function populateUserSettings() {
     if (!currentUser) return;
     
     document.getElementById("settings-username").value = currentUser.username;
-    document.getElementById("settings-avatar-url").value = currentUser.avatar_url || "";
+    document.getElementById("settings-avatar-url").value = currentUser.avatar_url && !currentUser.avatar_url.startsWith("data:") ? currentUser.avatar_url : "";
     document.getElementById("settings-custom-status").value = currentUser.custom_status || "";
+    
+    document.getElementById("settings-avatar-file").value = "";
+    document.getElementById("settings-avatar-filename").innerText = "Nenhum arquivo selecionado";
     
     selectedSettingsColor = currentUser.avatar_color;
     selectAvatarColor(currentUser.avatar_color);
@@ -2051,8 +2101,24 @@ async function handleSettingsSubmit(e) {
     if (!currentUser) return;
     
     const username = document.getElementById("settings-username").value.trim();
-    const avatarUrl = document.getElementById("settings-avatar-url").value.trim();
     const customStatus = document.getElementById("settings-custom-status").value.trim();
+    let avatarUrl = document.getElementById("settings-avatar-url").value.trim();
+    
+    const fileInput = document.getElementById("settings-avatar-file");
+    if (fileInput.files && fileInput.files[0]) {
+        const file = fileInput.files[0];
+        if (file.size > 2 * 1024 * 1024) {
+            alert("A foto de perfil é muito grande. O limite máximo é de 2 MB.");
+            return;
+        }
+        
+        try {
+            avatarUrl = await readAndResizeImage(file);
+        } catch (err) {
+            alert("Erro ao processar a imagem do avatar.");
+            return;
+        }
+    }
     
     if (!username) return;
     

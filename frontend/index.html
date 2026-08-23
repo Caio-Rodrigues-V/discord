@@ -459,10 +459,19 @@
                     <input type="text" id="settings-username" required class="w-full bg-discord-darkest text-white border border-transparent focus:border-discord-brand p-2.5 rounded outline-none text-sm transition-all">
                 </div>
                 
-                <div>
-                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">URL do Avatar (Foto de Perfil)</label>
-                    <input type="url" id="settings-avatar-url" placeholder="https://exemplo.com/sua-foto.jpg" class="w-full bg-discord-darkest text-white border border-transparent focus:border-discord-brand p-2.5 rounded outline-none text-sm transition-all">
-                    <p class="text-[10px] text-gray-500 mt-1">Insira o link direto de uma imagem (JPG, PNG, GIF) para usar como foto de perfil.</p>
+                <div class="space-y-2">
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Foto de Perfil (Avatar)</label>
+                    <div class="flex flex-col space-y-2">
+                        <div class="flex items-center space-x-2">
+                            <label for="settings-avatar-file" class="bg-discord-brand hover:bg-discord-brandHover text-white px-3 py-1.5 rounded text-xs font-semibold cursor-pointer transition-colors flex items-center space-x-1.5">
+                                <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+                                <span>Enviar Imagem</span>
+                            </label>
+                            <input type="file" id="settings-avatar-file" accept="image/*" class="hidden" onchange="handleAvatarFileSelect(event)">
+                            <span id="settings-avatar-filename" class="text-[10px] text-gray-400 truncate max-w-[200px]">Nenhum arquivo selecionado</span>
+                        </div>
+                        <input type="url" id="settings-avatar-url" placeholder="Ou insira o link de uma imagem (https://...)" class="w-full bg-discord-darkest text-white border border-transparent focus:border-discord-brand p-2 rounded outline-none text-xs transition-all">
+                    </div>
                 </div>
                 
                 <div>
@@ -518,6 +527,6 @@
     </div>
 
     <!-- Main JS Application script -->
-    <script src="/app.js?v=4"></script>
+    <script src="/app.js?v=5"></script>
 </body>
 </html>
