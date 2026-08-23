@@ -194,18 +194,18 @@ async def update_profile(data: UpdateProfileModel, token: str = Query(...)):
             cursor.execute(qry("SELECT id FROM users WHERE username = ?"), (data.username,))
             if cursor.fetchone():
                 raise HTTPException(status_code=400, detail="Nome de usuário já está em uso.")
-            cursor.execute(qry("UPDATE users SET username = ? WHERE id = ?"), (data.username, user["id"]))
+            cursor.execute(qry("UPDATE users SET username = ? WHERE id = ?"), (data.username, user["user_id"]))
             
         if data.avatar_color:
-            cursor.execute(qry("UPDATE users SET avatar_color = ? WHERE id = ?"), (data.avatar_color, user["id"]))
+            cursor.execute(qry("UPDATE users SET avatar_color = ? WHERE id = ?"), (data.avatar_color, user["user_id"]))
             
         if data.avatar_url is not None:
             val = data.avatar_url.strip() if data.avatar_url.strip() else None
-            cursor.execute(qry("UPDATE users SET avatar_url = ? WHERE id = ?"), (val, user["id"]))
+            cursor.execute(qry("UPDATE users SET avatar_url = ? WHERE id = ?"), (val, user["user_id"]))
             
         if data.custom_status is not None:
             val = data.custom_status.strip() if data.custom_status.strip() else None
-            cursor.execute(qry("UPDATE users SET custom_status = ? WHERE id = ?"), (val, user["id"]))
+            cursor.execute(qry("UPDATE users SET custom_status = ? WHERE id = ?"), (val, user["user_id"]))
             
         conn.commit()
     except HTTPException as he:
@@ -216,7 +216,7 @@ async def update_profile(data: UpdateProfileModel, token: str = Query(...)):
     finally:
         conn.close()
         
-    updated = get_user_by_id(user["id"])
+    updated = get_user_by_id(user["user_id"])
     
     # Transmitir a alteração para todos os usuários conectados
     all_connected = list(manager.active_connections.keys())
