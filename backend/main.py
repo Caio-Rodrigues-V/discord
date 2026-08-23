@@ -15,6 +15,8 @@ from backend.database import (
     create_server, join_server_by_invite, get_user_servers,
     get_server_members, create_channel, get_server_channels,
     save_message, get_channel_messages, add_user_to_default_server,
+    get_or_create_dm_channel, get_user_dm_channels, get_dm_channel_messages,
+    update_message, delete_message,
     get_db, get_cursor, qry
 )
 
