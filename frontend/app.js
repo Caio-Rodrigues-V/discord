@@ -532,6 +532,17 @@ function handleWebSocketMessage(msg) {
                 renderVoiceGrid();
             }
             
+            // Sincronizar com o voiceStates geral (barra lateral esquerda)
+            for (const cid in voiceStates) {
+                const u = voiceStates[cid].find(user => user.id === updatedUser.id);
+                if (u) {
+                    u.username = updatedUser.username;
+                    u.avatar_color = updatedUser.avatar_color;
+                    u.avatar_url = updatedUser.avatar_url;
+                }
+            }
+            renderChannels();
+            
             if (updatedUser.id === currentUser.id) {
                 currentUser.username = updatedUser.username;
                 currentUser.avatar_color = updatedUser.avatar_color;
@@ -809,10 +820,17 @@ function renderChannels() {
                     const uRow = document.createElement("div");
                     uRow.className = "flex items-center space-x-2 py-0.5 text-xs text-gray-300";
                     
-                    const uAvatar = document.createElement("div");
-                    uAvatar.className = "w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white flex-shrink-0";
-                    uAvatar.innerText = u.username.slice(0, 2).toUpperCase();
-                    uAvatar.style.backgroundColor = u.avatar_color;
+                    let uAvatar;
+                    if (u.avatar_url) {
+                        uAvatar = document.createElement("img");
+                        uAvatar.src = u.avatar_url;
+                        uAvatar.className = "w-5 h-5 rounded-full object-cover flex-shrink-0";
+                    } else {
+                        uAvatar = document.createElement("div");
+                        uAvatar.className = "w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white flex-shrink-0";
+                        uAvatar.innerText = u.username.slice(0, 2).toUpperCase();
+                        uAvatar.style.backgroundColor = u.avatar_color;
+                    }
                     
                     const borderStyle = u.speaking ? 'outline outline-2 outline-discord-green' : '';
                     uAvatar.className += ` ${borderStyle}`;

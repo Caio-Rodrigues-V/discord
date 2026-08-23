@@ -229,6 +229,13 @@ async def update_profile(data: UpdateProfileModel, token: str = Query(...)):
     if data.username and data.username != user["username"]:
         new_token = create_access_token(updated["id"], updated["username"])
     
+    # Atualizar em tempo real na memória do ConnectionManager para chamadas ativas
+    u_id = user["user_id"]
+    if u_id in manager.user_info:
+        manager.user_info[u_id]["username"] = updated["username"]
+        manager.user_info[u_id]["avatar_color"] = updated["avatar_color"]
+        manager.user_info[u_id]["avatar_url"] = updated.get("avatar_url")
+        
     # Transmitir a alteração para todos os usuários conectados
     all_connected = list(manager.active_connections.keys())
     await manager.broadcast_to_users({
@@ -370,13 +377,14 @@ class ConnectionManager:
         # Mapeamento: user_id -> channel_id (voz ativo)
         self.user_voice_channels: Dict[int, int] = {}
 
-    async def connect(self, websocket: WebSocket, user_id: int, username: str, avatar_color: str):
+    async def connect(self, websocket: WebSocket, user_id: int, username: str, avatar_color: str, avatar_url: Optional[str] = None):
         await websocket.accept()
         self.active_connections[user_id] = websocket
         self.user_info[user_id] = {
             "id": user_id,
             "username": username,
-            "avatar_color": avatar_color
+            "avatar_color": avatar_color,
+            "avatar_url": avatar_url
         }
         self.user_voice_settings[user_id] = {
             "muted": False,
@@ -464,8 +472,9 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
     # Obter detalhes completos do usuário do DB
     user_details = get_user_by_id(user_id)
     avatar_color = user_details["avatar_color"] if user_details else "#5865F2"
+    avatar_url = user_details.get("avatar_url") if user_details else None
     
-    await manager.connect(websocket, user_id, username, avatar_color)
+    await manager.connect(websocket, user_id, username, avatar_color, avatar_url)
     await manager.broadcast_to_users({
         "type": "user_status_changed",
         "user_id": user_id,
