@@ -42,25 +42,7 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
-    # FORÇAR LIMPEZA E RESET DO BANCO DE DADOS PARA ADOTAR O NOVO ESQUEMA COM DMs (REMOVER DEPOIS)
-    try:
-        if IS_POSTGRES:
-            cursor.execute("DROP TABLE IF EXISTS messages CASCADE;")
-            cursor.execute("DROP TABLE IF EXISTS dm_channels CASCADE;")
-            cursor.execute("DROP TABLE IF EXISTS server_members CASCADE;")
-            cursor.execute("DROP TABLE IF EXISTS channels CASCADE;")
-            cursor.execute("DROP TABLE IF EXISTS servers CASCADE;")
-            cursor.execute("DROP TABLE IF EXISTS users CASCADE;")
-        else:
-            cursor.execute("DROP TABLE IF EXISTS messages;")
-            cursor.execute("DROP TABLE IF EXISTS dm_channels;")
-            cursor.execute("DROP TABLE IF EXISTS server_members;")
-            cursor.execute("DROP TABLE IF EXISTS channels;")
-            cursor.execute("DROP TABLE IF EXISTS servers;")
-            cursor.execute("DROP TABLE IF EXISTS users;")
-        print("Tabelas antigas deletadas para reset completo!")
-    except Exception as e:
-        print("Aviso ao resetar tabelas:", e)
+    # As tabelas serão criadas apenas se não existirem, sem deletar os dados atuais.
     
     if IS_POSTGRES:
         cursor.execute("""
