@@ -1372,14 +1372,25 @@ async function toggleScreenShare() {
     }
     
     try {
-        screenStream = await navigator.mediaDevices.getDisplayMedia({
-            video: {
-                width: { max: 1920 },
-                height: { max: 1080 },
-                frameRate: { max: 30 }
-            },
-            audio: true // Permitir compartilhar o som do sistema/aba
-        });
+        try {
+            screenStream = await navigator.mediaDevices.getDisplayMedia({
+                video: {
+                    width: { max: 1920 },
+                    height: { max: 1080 },
+                    frameRate: { max: 30 }
+                },
+                audio: true
+            });
+        } catch (audioErr) {
+            console.log("Tentando compartilhar tela sem áudio como fallback...");
+            screenStream = await navigator.mediaDevices.getDisplayMedia({
+                video: {
+                    width: { max: 1920 },
+                    height: { max: 1080 },
+                    frameRate: { max: 30 }
+                }
+            });
+        }
         
         isSharingScreen = true;
         updateScreenControlsUI();
@@ -1631,14 +1642,23 @@ function renderVoiceGrid() {
     // Anexar streams de vídeo
     activeVoiceUsers.forEach(u => {
         const videoEl = document.getElementById(`video-peer-${u.id}`);
+        const avatarEl = document.getElementById(`avatar-peer-${u.id}`);
         if (!videoEl) return;
         
         if (u.id === currentUser.id && isSharingScreen && screenStream) {
+            videoEl.classList.remove("hidden");
+            if (avatarEl) avatarEl.classList.add("hidden");
             videoEl.srcObject = screenStream;
+            videoEl.play().catch(err => console.warn("Erro ao iniciar reprodução local da tela:", err));
         } else if (u.id !== currentUser.id && u.sharingScreen && remoteVideoStreams[u.id]) {
+            videoEl.classList.remove("hidden");
+            if (avatarEl) avatarEl.classList.add("hidden");
             videoEl.srcObject = remoteVideoStreams[u.id];
+            videoEl.play().catch(err => console.warn("Erro ao iniciar reprodução remota da tela:", err));
         } else {
             videoEl.classList.add("hidden");
+            if (avatarEl) avatarEl.classList.remove("hidden");
+            videoEl.srcObject = null;
         }
     });
 }
