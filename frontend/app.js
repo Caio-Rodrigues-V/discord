@@ -15,6 +15,7 @@ let remoteVideoStreams = {}; // peerId -> MediaStream (vídeo/tela)
 
 // WebRTC
 let ws = null;
+let pingStart = 0;
 let peerConnections = {}; // peerId -> RTCPeerConnection
 let localStream = null; // Stream do microfone
 let screenStream = null; // Stream do compartilhamento de tela
@@ -23,6 +24,76 @@ let isDeafened = false;
 let isSharingScreen = false;
 let speakingLoopActive = false;
 let focusedUserId = null; // ID do usuário que está em foco na call (se houver)
+
+// --- Sintetizador de Efeitos Sonoros (Estilo Discord) ---
+const SoundEffects = {
+    ctx: null,
+    init() {
+        if (!this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    },
+    playJoin() {
+        this.init();
+        const now = this.ctx.currentTime;
+        this.playTone(523.25, 0.08, now); // C5
+        this.playTone(659.25, 0.08, now + 0.07); // E5
+        this.playTone(783.99, 0.12, now + 0.14); // G5
+    },
+    playLeave() {
+        this.init();
+        const now = this.ctx.currentTime;
+        this.playTone(783.99, 0.08, now); // G5
+        this.playTone(659.25, 0.08, now + 0.07); // E5
+        this.playTone(523.25, 0.12, now + 0.14); // C5
+    },
+    playMute() {
+        this.init();
+        const now = this.ctx.currentTime;
+        this.playTone(600, 0.04, now);
+        this.playTone(480, 0.06, now + 0.04);
+    },
+    playUnmute() {
+        this.init();
+        const now = this.ctx.currentTime;
+        this.playTone(480, 0.04, now);
+        this.playTone(600, 0.06, now + 0.04);
+    },
+    playDeafen() {
+        this.init();
+        const now = this.ctx.currentTime;
+        this.playTone(350, 0.06, now);
+        this.playTone(350, 0.06, now + 0.06);
+        this.playTone(280, 0.12, now + 0.12);
+    },
+    playUndeafen() {
+        this.init();
+        const now = this.ctx.currentTime;
+        this.playTone(280, 0.06, now);
+        this.playTone(350, 0.06, now + 0.06);
+        this.playTone(450, 0.12, now + 0.12);
+    },
+    playTone(freq, duration, time) {
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(freq, time);
+            
+            gain.gain.setValueAtTime(0.04, time);
+            gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+            
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            
+            osc.start(time);
+            osc.stop(time + duration);
+        } catch (e) {
+            console.warn("Erro ao reproduzir efeito sonoro:", e);
+        }
+    }
+};
 let locallyMutedUsers = new Set(); // IDs dos usuários mutados localmente
 
 let rtcConfig = {
@@ -81,6 +152,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             document.getElementById("context-volume-val").innerText = `${val}%`;
             if (activeContextUserId) {
                 userVolumes[activeContextUserId] = parseInt(val);
+                localStorage.setItem(`userVolume_${activeContextUserId}`, val);
                 const audios = document.querySelectorAll(`.audio-peer-${activeContextUserId}`);
                 audios.forEach(audio => {
                     audio.volume = val / 100;
@@ -250,12 +322,13 @@ function connectWebSocket() {
     
     ws.onopen = () => {
         console.log("Conectado ao servidor de sinalização WebSocket.");
-        // Ping periódico para manter a conexão ativa
+        // Ping periódico para manter a conexão ativa e medir latência
         setInterval(() => {
             if (ws && ws.readyState === WebSocket.OPEN) {
+                pingStart = performance.now();
                 sendWsMessage({ type: "ping" });
             }
-        }, 30000);
+        }, 15000);
     };
     
     ws.onmessage = (event) => {
@@ -284,7 +357,10 @@ function sendWsMessage(message) {
 function handleWebSocketMessage(msg) {
     switch (msg.type) {
         case "pong":
-            // Keep alive
+            if (pingStart > 0) {
+                const rtt = Math.round(performance.now() - pingStart);
+                updatePingUI(rtt);
+            }
             break;
             
         case "chat_message":
@@ -347,6 +423,7 @@ function handleWebSocketMessage(msg) {
                 // Evitar duplicações na lista local de call
                 if (!activeVoiceUsers.find(u => u.id === newUser.id)) {
                     activeVoiceUsers.push(newUser);
+                    SoundEffects.playJoin();
                 }
                 
                 // Criar PeerConnection passiva (esperando a oferta de quem entrou)
@@ -387,7 +464,10 @@ function handleWebSocketMessage(msg) {
                 }
                 
                 // Atualizar lista local da call
-                activeVoiceUsers = activeVoiceUsers.filter(u => u.id !== leftUserId);
+                if (activeVoiceUsers.some(u => u.id === leftUserId)) {
+                    activeVoiceUsers = activeVoiceUsers.filter(u => u.id !== leftUserId);
+                    SoundEffects.playLeave();
+                }
                 renderVoiceGrid();
             }
             renderChannels();
@@ -866,6 +946,7 @@ async function joinVoiceChannel(channelId, channelName) {
         // Abrir diretamente a grade de chamada
         showView('voice');
         renderChannels();
+        SoundEffects.playJoin();
         
     } catch (err) {
         console.error("Não foi possível conectar à chamada:", err);
@@ -911,6 +992,7 @@ function disconnectVoice() {
     activeVoiceChannelId = null;
     activeVoiceUsers = [];
     focusedUserId = null;
+    SoundEffects.playLeave();
     
     // Atualizar UI
     document.getElementById("voice-connection-panel").classList.add("hidden");
@@ -971,6 +1053,16 @@ function createPeerConnection(peerId, isInitiator) {
                 audioEl.id = `audio-track-${event.track.id}`;
                 audioEl.className = `audio-peer-${peerId}`; // Salva o ID do dono para limpeza e mute local
                 audioEl.autoplay = true;
+                
+                // Aplicar volume salvo
+                const savedVol = localStorage.getItem(`userVolume_${peerId}`);
+                if (savedVol !== null) {
+                    audioEl.volume = parseInt(savedVol) / 100;
+                    userVolumes[peerId] = parseInt(savedVol);
+                } else {
+                    audioEl.volume = 1.0;
+                }
+                
                 document.body.appendChild(audioEl);
             }
             audioEl.srcObject = stream;
@@ -1255,8 +1347,13 @@ function updateScreenControlsUI() {
 
 // --- Controles de Microfone e Ouvido ---
 
-function toggleMic() {
+function toggleMic(silent = false) {
     isMuted = !isMuted;
+    
+    if (!silent) {
+        if (isMuted) SoundEffects.playMute();
+        else SoundEffects.playUnmute();
+    }
     
     // Atualizar microfone local se houver
     if (localStream && localStream.getAudioTracks().length > 0) {
@@ -1300,9 +1397,11 @@ function toggleDeafen() {
     
     // Se ensurdecer, automaticamente muta. Se desensurdecer, desmuta (ou mantém conforme o estado anterior)
     if (isDeafened) {
-        if (!isMuted) toggleMic();
+        if (!isMuted) toggleMic(true);
+        SoundEffects.playDeafen();
     } else {
-        if (isMuted) toggleMic();
+        if (isMuted) toggleMic(true);
+        SoundEffects.playUndeafen();
     }
     
     // Muta todos os áudios recebidos dos peers
@@ -1524,7 +1623,7 @@ function showUserContextMenu(userId, x, y) {
     menu.style.left = `${posX}px`;
     menu.style.top = `${posY}px`;
     
-    const currentVolume = userVolumes[userId] !== undefined ? userVolumes[userId] : 100;
+    const currentVolume = userVolumes[userId] !== undefined ? userVolumes[userId] : (localStorage.getItem(`userVolume_${userId}`) ? parseInt(localStorage.getItem(`userVolume_${userId}`)) : 100);
     const slider = document.getElementById("context-volume-slider");
     slider.value = currentVolume;
     document.getElementById("context-volume-val").innerText = `${currentVolume}%`;
@@ -1798,5 +1897,14 @@ function toggleMobileSidebar(force) {
         sidebarServers.classList.add("-translate-x-full");
         sidebarChannels.classList.add("-translate-x-full");
         backdrop.classList.add("hidden");
+    }
+}
+
+function updatePingUI(rtt) {
+    const statusSubtext = document.getElementById("voice-channel-connected-name");
+    if (statusSubtext && activeVoiceChannelId) {
+        const currentChannel = channels.find(c => c.id === activeVoiceChannelId);
+        const channelName = currentChannel ? currentChannel.name : "Chamada";
+        statusSubtext.innerText = `${channelName} / ${rtt}ms`;
     }
 }
