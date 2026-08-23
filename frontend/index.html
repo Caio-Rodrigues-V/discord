@@ -129,33 +129,46 @@
                 </div>
             </div>
             
-            <!-- Lista de Canais -->
-            <div class="flex-1 overflow-y-auto px-2 py-3 space-y-4">
-                <!-- Seção Canais de Texto -->
-                <div>
-                    <div class="flex items-center justify-between px-1 text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 cursor-default">
-                        <div class="flex items-center space-x-0.5">
-                            <i data-lucide="chevron-down" class="w-3 h-3"></i>
-                            <span>Canais de Texto</span>
+            <!-- Lista de Canais / DMs -->
+            <div class="flex-1 overflow-y-auto px-2 py-3">
+                <!-- SEÇÃO DO SERVIDOR (CANAIS) -->
+                <div id="sidebar-server-channels" class="space-y-4">
+                    <!-- Seção Canais de Texto -->
+                    <div>
+                        <div class="flex items-center justify-between px-1 text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 cursor-pointer select-none" onclick="toggleCategoryCollapse('text')">
+                            <div class="flex items-center space-x-0.5">
+                                <i data-lucide="chevron-down" class="w-3 h-3 transition-transform duration-150" id="category-icon-text"></i>
+                                <span>Canais de Texto</span>
+                            </div>
+                            <i data-lucide="plus" class="w-4 h-4 hover:text-white cursor-pointer" onclick="event.stopPropagation(); openCreateChannelModal('text')"></i>
                         </div>
-                        <i data-lucide="plus" class="w-4 h-4 hover:text-white cursor-pointer" onclick="openCreateChannelModal('text')"></i>
+                        <div id="text-channels-container" class="space-y-0.5">
+                            <!-- Canais de texto dinâmicos -->
+                        </div>
                     </div>
-                    <div id="text-channels-container" class="space-y-0.5">
-                        <!-- Canais de texto dinâmicos -->
+                    
+                    <!-- Seção Canais de Voz -->
+                    <div>
+                        <div class="flex items-center justify-between px-1 text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 cursor-pointer select-none" onclick="toggleCategoryCollapse('voice')">
+                            <div class="flex items-center space-x-0.5">
+                                <i data-lucide="chevron-down" class="w-3 h-3 transition-transform duration-150" id="category-icon-voice"></i>
+                                <span>Canais de Voz</span>
+                            </div>
+                            <i data-lucide="plus" class="w-4 h-4 hover:text-white cursor-pointer" onclick="event.stopPropagation(); openCreateChannelModal('voice')"></i>
+                        </div>
+                        <div id="voice-channels-container" class="space-y-0.5">
+                            <!-- Canais de voz dinâmicos -->
+                        </div>
                     </div>
                 </div>
-                
-                <!-- Seção Canais de Voz -->
-                <div>
-                    <div class="flex items-center justify-between px-1 text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 cursor-default">
-                        <div class="flex items-center space-x-0.5">
-                            <i data-lucide="chevron-down" class="w-3 h-3"></i>
-                            <span>Canais de Voz</span>
-                        </div>
-                        <i data-lucide="plus" class="w-4 h-4 hover:text-white cursor-pointer" onclick="openCreateChannelModal('voice')"></i>
+
+                <!-- SEÇÃO DE DMs (MENSAGENS DIRETAS) -->
+                <div id="sidebar-dms" class="hidden space-y-2">
+                    <div class="flex items-center justify-between px-1 text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 cursor-default">
+                        <span>Mensagens Diretas</span>
                     </div>
-                    <div id="voice-channels-container" class="space-y-0.5">
-                        <!-- Canais de voz dinâmicos -->
+                    <div id="dms-list-container" class="space-y-1">
+                        <!-- Lista de chats de DM dinâmicos -->
                     </div>
                 </div>
             </div>
@@ -247,13 +260,28 @@
                             <!-- Mensagens dinâmicas -->
                         </div>
                         
+                        <!-- Previa do Anexo Selecionado -->
+                        <div id="chat-attachment-preview-container" class="hidden mx-4 mb-2 bg-discord-darkest rounded p-2.5 flex items-center justify-between border border-gray-800">
+                            <div class="flex items-center space-x-3 overflow-hidden">
+                                <div id="chat-attachment-preview-media" class="w-10 h-10 rounded overflow-hidden flex-shrink-0 bg-discord-light flex items-center justify-center"></div>
+                                <span id="chat-attachment-preview-name" class="text-xs text-gray-300 truncate font-semibold">nome-do-arquivo.png</span>
+                            </div>
+                            <button type="button" onclick="clearChatAttachment()" class="text-gray-400 hover:text-white" title="Remover Anexo">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                        
                         <!-- Input do Chat -->
-                        <div class="px-4 pb-6 flex-shrink-0">
+                        <div class="px-4 pb-6 flex-shrink-0 relative">
+                            <!-- Indicador de Digitando -->
+                            <div id="typing-indicator" class="absolute bottom-1 left-6 text-[10px] text-gray-400 italic pointer-events-none select-none"></div>
+
                             <form id="chat-form" class="bg-discord-input rounded-lg flex items-center px-4 py-2.5">
-                                <button type="button" class="text-gray-400 hover:text-white mr-4 transition-colors">
+                                <button type="button" onclick="document.getElementById('chat-attachment-file').click()" class="text-gray-400 hover:text-white mr-4 transition-colors">
                                     <i data-lucide="plus-circle" class="w-6 h-6"></i>
                                 </button>
-                                <input type="text" id="chat-input" placeholder="Conversar no canal..." autocomplete="off" class="flex-1 bg-transparent text-white outline-none placeholder-gray-500 text-sm">
+                                <input type="file" id="chat-attachment-file" class="hidden" onchange="handleChatAttachmentSelect(event)">
+                                <input type="text" id="chat-input" placeholder="Conversar no canal..." autocomplete="off" class="flex-1 bg-transparent text-white outline-none placeholder-gray-500 text-sm" oninput="handleChatInputKeypress()">
                                 <button type="submit" class="hidden"></button>
                             </form>
                         </div>
@@ -311,34 +339,47 @@
 
             <!-- PAGINA INICIAL (HOME - MENSAGENS DIRETAS) -->
             <!-- HOME (Sem Servidor Selecionado) -->
-            <div id="home-container" class="hidden flex-1 flex flex-col min-w-0 select-text">
+            <div id="home-container" class="hidden flex-1 flex flex-col bg-discord-light min-w-0 select-text">
                 <!-- Cabeçalho da Home -->
-                <div class="h-12 border-b border-discord-darkest flex items-center px-4 flex-shrink-0 bg-discord-dark shadow-sm lg:hidden">
-                    <button onclick="event.stopPropagation(); toggleMobileSidebar()" class="p-1 mr-2 text-gray-400 hover:text-white rounded focus:outline-none" title="Menu">
-                        <i data-lucide="menu" class="w-6 h-6"></i>
-                    </button>
-                    <span class="text-white font-bold text-sm">Discord Clan</span>
+                <div class="h-12 border-b border-discord-darkest flex items-center justify-between px-4 flex-shrink-0 bg-discord-dark shadow-sm">
+                    <div class="flex items-center space-x-2 text-white font-bold">
+                        <i data-lucide="message-square" class="w-5 h-5 text-gray-400"></i>
+                        <span>Início</span>
+                    </div>
                 </div>
                 
-                <!-- Conteúdo da Home -->
-                <div class="flex-1 flex flex-col items-center justify-center text-center p-8">
-                    <div class="max-w-[480px] space-y-6">
-                        <div class="w-24 h-24 bg-discord-brand bg-opacity-10 text-discord-brand rounded-full flex items-center justify-center mx-auto shadow-2xl">
-                        <i data-lucide="message-square" class="w-12 h-12"></i>
+                <div class="flex-1 flex overflow-hidden min-h-0">
+                    <!-- Conteúdo da Home -->
+                    <div class="flex-1 flex flex-col items-center justify-center text-center p-8 overflow-y-auto">
+                        <div class="max-w-[480px] space-y-6">
+                            <div class="w-24 h-24 bg-discord-brand bg-opacity-10 text-discord-brand rounded-full flex items-center justify-center mx-auto shadow-2xl">
+                                <i data-lucide="message-square" class="w-12 h-12"></i>
+                            </div>
+                            <div class="space-y-2">
+                                <h1 class="text-3xl font-bold text-white">Início</h1>
+                                <p class="text-gray-400 text-sm">Crie seu próprio servidor ou clique em qualquer membro à direita para iniciar uma conversa direta!</p>
+                            </div>
+                            <div class="flex justify-center space-x-4">
+                                <button onclick="toggleModal('create-server-modal', true)" class="bg-discord-green hover:bg-discord-greenHover text-white px-5 py-2.5 rounded font-medium transition-colors flex items-center space-x-2">
+                                    <i data-lucide="plus" class="w-5 h-5"></i>
+                                    <span>Criar Servidor</span>
+                                </button>
+                                <button onclick="toggleModal('join-server-modal', true)" class="bg-discord-brand hover:bg-discord-brandHover text-white px-5 py-2.5 rounded font-medium transition-colors flex items-center space-x-2">
+                                    <i data-lucide="compass" class="w-5 h-5"></i>
+                                    <span>Entrar em Servidor</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                    <div class="space-y-2">
-                        <h1 class="text-3xl font-bold text-white">Nenhum Servidor Ativo</h1>
-                        <p class="text-gray-400 text-sm">Crie seu próprio servidor para convidar seus amigos ou entre em um servidor existente usando um código de convite enviado por eles!</p>
-                    </div>
-                    <div class="flex justify-center space-x-4">
-                        <button onclick="toggleModal('create-server-modal', true)" class="bg-discord-green hover:bg-discord-greenHover text-white px-5 py-2.5 rounded font-medium transition-colors flex items-center space-x-2">
-                            <i data-lucide="plus" class="w-5 h-5"></i>
-                            <span>Criar Servidor</span>
-                        </button>
-                        <button onclick="toggleModal('join-server-modal', true)" class="bg-discord-brand hover:bg-discord-brandHover text-white px-5 py-2.5 rounded font-medium transition-colors flex items-center space-x-2">
-                            <i data-lucide="compass" class="w-5 h-5"></i>
-                            <span>Entrar em Servidor</span>
-                        </button>
+                    
+                    <!-- Lista de Membros Gerais/Amigos (Direita da Home) -->
+                    <div class="w-60 bg-discord-dark border-l border-discord-darkest hidden md:flex flex-col flex-shrink-0">
+                        <div class="p-4 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                            Todos os Usuários
+                        </div>
+                        <div id="home-users-list-container" class="flex-1 overflow-y-auto px-2 space-y-1">
+                            <!-- Todos os usuários do sistema dinamicamente -->
+                        </div>
                     </div>
                 </div>
             </div>

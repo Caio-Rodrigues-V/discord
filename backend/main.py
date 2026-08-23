@@ -79,6 +79,17 @@ class ChannelCreateModel(BaseModel):
     name: str
     type: str  # 'text' ou 'voice'
 
+class CreateDMModel(BaseModel):
+    recipient_id: int
+
+class SendMessageModel(BaseModel):
+    content: str
+    attachment_url: Optional[str] = None
+    attachment_type: Optional[str] = None
+
+class EditMessageModel(BaseModel):
+    content: str
+
 
 # --- Funções de Segurança ---
 def hash_password(password: str) -> str:
@@ -319,6 +330,96 @@ def list_messages(channel_id: int, token: str = Query(...)):
     return get_channel_messages(channel_id)
 
 
+# --- Rotas de DMs (Conversas Diretas) ---
+
+@app.get("/api/dms")
+def list_dms(token: str = Query(...)):
+    user = get_current_user_from_header(token)
+    return get_user_dm_channels(user["user_id"])
+
+@app.post("/api/dms")
+def create_dm(data: CreateDMModel, token: str = Query(...)):
+    user = get_current_user_from_header(token)
+    dm_id = get_or_create_dm_channel(user["user_id"], data.recipient_id)
+    if not dm_id:
+        raise HTTPException(status_code=400, detail="Não foi possível criar o canal de DM.")
+    return {"dm_channel_id": dm_id}
+
+@app.get("/api/dms/{dm_channel_id}/messages")
+def list_dm_messages(dm_channel_id: int, token: str = Query(...)):
+    get_current_user_from_header(token)
+    return get_dm_channel_messages(dm_channel_id)
+
+
+# --- Edição e Exclusão de Mensagens ---
+
+@app.put("/api/messages/{message_id}")
+async def edit_msg(message_id: int, data: EditMessageModel, token: str = Query(...)):
+    user = get_current_user_from_header(token)
+    updated = update_message(message_id, user["user_id"], data.content)
+    if not updated:
+        raise HTTPException(status_code=403, detail="Não autorizado a editar esta mensagem ou mensagem não encontrada.")
+    
+    # Enviar broadcast via WebSocket
+    if updated.get("channel_id"):
+        conn = get_db()
+        cursor = get_cursor(conn)
+        cursor.execute(qry("SELECT server_id FROM channels WHERE id = ?"), (updated["channel_id"],))
+        chan = cursor.fetchone()
+        if chan:
+            cursor.execute(qry("SELECT user_id FROM server_members WHERE server_id = ?"), (chan["server_id"],))
+            members = cursor.fetchall()
+            member_ids = [m["user_id"] for m in members]
+            await manager.broadcast_to_users({"type": "message_edited", "message": updated}, member_ids)
+        conn.close()
+    elif updated.get("dm_channel_id"):
+        conn = get_db()
+        cursor = get_cursor(conn)
+        cursor.execute(qry("SELECT user_one_id, user_two_id FROM dm_channels WHERE id = ?"), (updated["dm_channel_id"],))
+        dm = cursor.fetchone()
+        if dm:
+            await manager.broadcast_to_users({"type": "message_edited", "message": updated}, [dm["user_one_id"], dm["user_two_id"]])
+        conn.close()
+        
+    return updated
+
+@app.delete("/api/messages/{message_id}")
+async def delete_msg(message_id: int, token: str = Query(...)):
+    user = get_current_user_from_header(token)
+    deleted = delete_message(message_id, user["user_id"])
+    if not deleted:
+        raise HTTPException(status_code=403, detail="Não autorizado a excluir esta mensagem ou mensagem não encontrada.")
+    
+    event_data = {
+        "type": "message_deleted",
+        "message_id": message_id,
+        "channel_id": deleted.get("channel_id"),
+        "dm_channel_id": deleted.get("dm_channel_id")
+    }
+    
+    if deleted.get("channel_id"):
+        conn = get_db()
+        cursor = get_cursor(conn)
+        cursor.execute(qry("SELECT server_id FROM channels WHERE id = ?"), (deleted["channel_id"],))
+        chan = cursor.fetchone()
+        if chan:
+            cursor.execute(qry("SELECT user_id FROM server_members WHERE server_id = ?"), (chan["server_id"],))
+            members = cursor.fetchall()
+            member_ids = [m["user_id"] for m in members]
+            await manager.broadcast_to_users(event_data, member_ids)
+        conn.close()
+    elif deleted.get("dm_channel_id"):
+        conn = get_db()
+        cursor = get_cursor(conn)
+        cursor.execute(qry("SELECT user_one_id, user_two_id FROM dm_channels WHERE id = ?"), (deleted["dm_channel_id"],))
+        dm = cursor.fetchone()
+        if dm:
+            await manager.broadcast_to_users(event_data, [dm["user_one_id"], dm["user_two_id"]])
+        conn.close()
+        
+    return {"success": True}
+
+
 @app.get("/api/config")
 def get_config():
     return {
@@ -386,12 +487,13 @@ class ConnectionManager:
         # Mapeamento: user_id -> channel_id (voz ativo)
         self.user_voice_channels: Dict[int, int] = {}
 
-    async def connect(self, websocket: WebSocket, user_id: int, username: str, avatar_color: str, avatar_url: Optional[str] = None):
+    async def connect(self, websocket: WebSocket, user_id: int, username: str, avatar_color: str, avatar_url: Optional[str] = None, display_name: Optional[str] = None):
         await websocket.accept()
         self.active_connections[user_id] = websocket
         self.user_info[user_id] = {
             "id": user_id,
             "username": username,
+            "display_name": display_name,
             "avatar_color": avatar_color,
             "avatar_url": avatar_url
         }
@@ -482,8 +584,9 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
     user_details = get_user_by_id(user_id)
     avatar_color = user_details["avatar_color"] if user_details else "#5865F2"
     avatar_url = user_details.get("avatar_url") if user_details else None
+    display_name = user_details.get("display_name") if user_details else None
     
-    await manager.connect(websocket, user_id, username, avatar_color, avatar_url)
+    await manager.connect(websocket, user_id, username, avatar_color, avatar_url, display_name)
     await manager.broadcast_to_users({
         "type": "user_status_changed",
         "user_id": user_id,
@@ -500,31 +603,91 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                 await websocket.send_text(json.dumps({"type": "pong"}))
                 
             elif msg_type == "chat_message":
-                channel_id = int(message.get("channel_id"))
+                channel_id_val = message.get("channel_id")
+                dm_channel_id_val = message.get("dm_channel_id")
                 content = message.get("content")
+                attachment_url = message.get("attachment_url")
+                attachment_type = message.get("attachment_type")
                 
-                # Salvar mensagem no SQLite
-                saved_msg = save_message(channel_id, user_id, content)
+                channel_id = int(channel_id_val) if channel_id_val is not None else None
+                dm_channel_id = int(dm_channel_id_val) if dm_channel_id_val is not None else None
+                
+                saved_msg = save_message(
+                    channel_id=channel_id,
+                    user_id=user_id,
+                    content=content,
+                    dm_channel_id=dm_channel_id,
+                    attachment_url=attachment_url,
+                    attachment_type=attachment_type
+                )
+                
                 if saved_msg:
-                    # Encontrar todos os membros do servidor deste canal para transmitir
-                    # (Para simplicidade, transmitimos a todos os membros do servidor conectados)
+                    if channel_id:
+                        # Mensagem de canal de servidor
+                        conn = get_db()
+                        cursor = get_cursor(conn)
+                        cursor.execute(qry("SELECT server_id FROM channels WHERE id = ?"), (channel_id,))
+                        chan = cursor.fetchone()
+                        if chan:
+                            server_id = chan["server_id"]
+                            cursor.execute(qry("SELECT user_id FROM server_members WHERE server_id = ?"), (server_id,))
+                            members = cursor.fetchall()
+                            member_ids = [m["user_id"] for m in members]
+                            await manager.broadcast_to_users({
+                                "type": "chat_message",
+                                "message": saved_msg
+                            }, member_ids)
+                        conn.close()
+                    elif dm_channel_id:
+                        # Mensagem de DM
+                        conn = get_db()
+                        cursor = get_cursor(conn)
+                        cursor.execute(qry("SELECT user_one_id, user_two_id FROM dm_channels WHERE id = ?"), (dm_channel_id,))
+                        dm = cursor.fetchone()
+                        if dm:
+                            await manager.broadcast_to_users({
+                                "type": "chat_message",
+                                "message": saved_msg
+                            }, [dm["user_one_id"], dm["user_two_id"]])
+                        conn.close()
+                        
+            elif msg_type == "typing_status":
+                channel_id_val = message.get("channel_id")
+                dm_channel_id_val = message.get("dm_channel_id")
+                typing = bool(message.get("typing", False))
+                
+                channel_id = int(channel_id_val) if channel_id_val is not None else None
+                dm_channel_id = int(dm_channel_id_val) if dm_channel_id_val is not None else None
+                
+                event_data = {
+                    "type": "typing_status",
+                    "user_id": user_id,
+                    "username": username,
+                    "display_name": display_name,
+                    "channel_id": channel_id,
+                    "dm_channel_id": dm_channel_id,
+                    "typing": typing
+                }
+                
+                if channel_id:
                     conn = get_db()
                     cursor = get_cursor(conn)
-                    # Achar o server_id deste canal
                     cursor.execute(qry("SELECT server_id FROM channels WHERE id = ?"), (channel_id,))
                     chan = cursor.fetchone()
                     if chan:
-                        server_id = chan["server_id"]
-                        # Buscar membros do servidor
-                        cursor.execute(qry("SELECT user_id FROM server_members WHERE server_id = ?"), (server_id,))
+                        cursor.execute(qry("SELECT user_id FROM server_members WHERE server_id = ?"), (chan["server_id"],))
                         members = cursor.fetchall()
-                        member_ids = [m["user_id"] for m in members]
-                        
-                        # Transmitir a mensagem
-                        await manager.broadcast_to_users({
-                            "type": "chat_message",
-                            "message": saved_msg
-                        }, member_ids)
+                        member_ids = [m["user_id"] for m in members if m["user_id"] != user_id]
+                        await manager.broadcast_to_users(event_data, member_ids)
+                    conn.close()
+                elif dm_channel_id:
+                    conn = get_db()
+                    cursor = get_cursor(conn)
+                    cursor.execute(qry("SELECT user_one_id, user_two_id FROM dm_channels WHERE id = ?"), (dm_channel_id,))
+                    dm = cursor.fetchone()
+                    if dm:
+                        recipients = [uid for uid in [dm["user_one_id"], dm["user_two_id"]] if uid != user_id]
+                        await manager.broadcast_to_users(event_data, recipients)
                     conn.close()
                     
             elif msg_type == "voice_join":

@@ -13,6 +13,16 @@ let voiceStates = {}; // channelId -> [{id, username, avatar_color, speaking, sh
 let remoteAudioStreams = {}; // peerId -> MediaStream (áudio)
 let remoteVideoStreams = {}; // peerId -> MediaStream (vídeo/tela)
 
+// Estado de QoL (DMs, Anexos, Digitando, Categorias)
+let categoriesCollapsed = { text: false, voice: false };
+let chatAttachmentBase64 = null;
+let chatAttachmentType = null;
+let chatAttachmentName = null;
+let typingTimeout = null;
+let isTyping = false;
+let dmChannels = [];
+let activeDmChannelId = null;
+
 // WebRTC
 let ws = null;
 let pingStart = 0;
@@ -117,6 +127,38 @@ async function loadConfig() {
     }
 }
 
+function toggleCategoryCollapse(category) {
+    categoriesCollapsed[category] = !categoriesCollapsed[category];
+    const container = document.getElementById(`${category}-channels-container`);
+    const icon = document.getElementById(`category-icon-${category}`);
+    
+    if (categoriesCollapsed[category]) {
+        container.classList.add("hidden");
+        if (icon) icon.style.transform = "rotate(-90deg)";
+    } else {
+        container.classList.remove("hidden");
+        if (icon) icon.style.transform = "rotate(0deg)";
+    }
+}
+
+function parseMarkdown(text) {
+    if (!text) return "";
+    let escaped = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+        
+    escaped = escaped.replace(/\*\*\*(.*?)\*\*\*/g, "<strong><em>$1</em></strong>");
+    escaped = escaped.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+    escaped = escaped.replace(/\*(.*?)\*/g, "<em>$1</em>");
+    escaped = escaped.replace(/`(.*?)`/g, '<code class="bg-discord-darkest font-mono text-xs px-1.5 py-0.5 rounded text-red-400">$1</code>');
+    
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    escaped = escaped.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-discord-brand hover:underline">$1</a>');
+    
+    return escaped;
+}
+
 // --- Sistema de Visualização (Abas) ---
 function showView(viewName) {
     const chat = document.getElementById("chat-container");
@@ -127,10 +169,22 @@ function showView(viewName) {
     home.classList.add("hidden");
     voice.classList.add("hidden");
     
+    const sidebarServer = document.getElementById("sidebar-server-channels");
+    const sidebarDms = document.getElementById("sidebar-dms");
+    
+    if (activeServerId === null) {
+        if (sidebarServer) sidebarServer.classList.add("hidden");
+        if (sidebarDms) sidebarDms.classList.remove("hidden");
+    } else {
+        if (sidebarServer) sidebarServer.classList.remove("hidden");
+        if (sidebarDms) sidebarDms.classList.add("hidden");
+    }
+    
     if (viewName === 'chat') {
         chat.classList.remove("hidden");
     } else if (viewName === 'home') {
         home.classList.remove("hidden");
+        loadHomeUsersList();
     } else if (viewName === 'voice') {
         voice.classList.remove("hidden");
         renderVoiceGrid();
@@ -383,12 +437,83 @@ function handleWebSocketMessage(msg) {
             }
             break;
             
-        case "chat_message":
-            // Recebeu uma mensagem no canal ativo
-            if (activeChannelId === msg.message.channel_id) {
+        case "chat_message": {
+            const isTarget = (msg.message.channel_id && msg.message.channel_id === activeChannelId && activeServerId !== null) ||
+                             (msg.message.dm_channel_id && msg.message.dm_channel_id === activeDmChannelId && activeServerId === null);
+            if (isTarget) {
                 appendChatMessage(msg.message);
             }
             break;
+        }
+        
+        case "message_edited": {
+            const editedMsg = msg.message;
+            const isTarget = (editedMsg.channel_id && editedMsg.channel_id === activeChannelId && activeServerId !== null) ||
+                             (editedMsg.dm_channel_id && editedMsg.dm_channel_id === activeDmChannelId && activeServerId === null);
+            if (isTarget) {
+                const wrapper = document.getElementById(`message-content-wrapper-${editedMsg.id}`);
+                if (wrapper) {
+                    const formatted = parseMarkdown(editedMsg.content);
+                    let attachmentHtml = "";
+                    if (editedMsg.attachment_url) {
+                        if (editedMsg.attachment_type && editedMsg.attachment_type.startsWith("image/")) {
+                            attachmentHtml = `
+                                <div class="mt-2 rounded overflow-hidden max-w-xs max-h-60 border border-gray-800 bg-black bg-opacity-30">
+                                    <img src="${editedMsg.attachment_url}" class="max-w-full max-h-full object-contain cursor-zoom-in hover:brightness-95 transition-all" onclick="window.open(this.src, '_blank')">
+                                </div>
+                            `;
+                        } else {
+                            attachmentHtml = `
+                                <a href="${editedMsg.attachment_url}" download="anexo" class="flex items-center space-x-3 bg-[#2b2d31] hover:bg-[#35373c] border border-[#1e1f22] p-3 rounded-lg w-fit mt-2 transition-all group/btn cursor-pointer">
+                                    <div class="w-10 h-10 bg-discord-darkest rounded flex items-center justify-center text-gray-400 group-hover/btn:text-white transition-colors">
+                                        <i data-lucide="file-text" class="w-5 h-5"></i>
+                                    </div>
+                                    <div class="flex flex-col min-w-0">
+                                        <span class="text-xs font-semibold text-gray-200 truncate max-w-[180px]">Baixar Anexo</span>
+                                        <span class="text-[9px] text-gray-400">Clique para salvar</span>
+                                    </div>
+                                </a>
+                            `;
+                        }
+                    }
+                    wrapper.innerHTML = `
+                        <p id="message-text-${editedMsg.id}" class="text-gray-300 text-sm whitespace-pre-wrap break-all">${formatted}</p>
+                        ${attachmentHtml}
+                    `;
+                    
+                    const tag = document.getElementById(`edit-tag-${editedMsg.id}`);
+                    if (tag) tag.classList.remove("hidden");
+                    
+                    lucide.createIcons();
+                }
+            }
+            break;
+        }
+        
+        case "message_deleted": {
+            const deletedId = msg.message_id;
+            const isTarget = (msg.channel_id && msg.channel_id === activeChannelId && activeServerId !== null) ||
+                             (msg.dm_channel_id && msg.dm_channel_id === activeDmChannelId && activeServerId === null);
+            if (isTarget) {
+                const msgEl = document.getElementById(`chat-message-${deletedId}`);
+                if (msgEl) msgEl.remove();
+            }
+            break;
+        }
+        
+        case "typing_status": {
+            const typ = msg.typing;
+            const typingUsername = msg.display_name || msg.username;
+            const isTarget = (msg.channel_id && msg.channel_id === activeChannelId && activeServerId !== null) ||
+                             (msg.dm_channel_id && msg.dm_channel_id === activeDmChannelId && activeServerId === null);
+            if (isTarget) {
+                const indicator = document.getElementById("typing-indicator");
+                if (indicator) {
+                    indicator.innerText = typ ? `${typingUsername} está digitando...` : "";
+                }
+            }
+            break;
+        }
             
         case "voice_states":
             // Snapshot inicial de todos os participantes dos canais de voz
@@ -724,15 +849,20 @@ function renderServerList() {
 function selectHome() {
     activeServerId = null;
     activeChannelId = null;
+    activeDmChannelId = null;
     
     // Atualizar indicadores de servidores
     renderServerList();
-    document.getElementById("home-indicator").className = "absolute left-0 w-1 bg-white rounded-r-md h-10 transition-all duration-200";
+    const homeInd = document.getElementById("home-indicator");
+    if (homeInd) {
+        homeInd.className = "absolute left-0 w-1 bg-white rounded-r-md h-10 transition-all duration-200";
+    }
     
     // Ajustar visualização lateral
     document.getElementById("server-header-name").innerText = "Mensagens Diretas";
-    document.getElementById("text-channels-container").innerHTML = "";
-    document.getElementById("voice-channels-container").innerHTML = "";
+    
+    // Renderizar lista de DMs na barra lateral
+    renderDMChannelsList();
     
     showView('home');
 }
@@ -740,6 +870,7 @@ function selectHome() {
 async function selectServer(serverId) {
     toggleMobileSidebar(false);
     activeServerId = serverId;
+    activeDmChannelId = null;
     document.getElementById("home-indicator").className = "absolute left-0 w-1 bg-white rounded-r-md h-0 transition-all duration-200";
     
     const server = servers.find(s => s.id === serverId);
@@ -784,6 +915,10 @@ async function loadChannels(serverId) {
 }
 
 function renderChannels() {
+    if (activeServerId === null) {
+        renderDMChannelsList();
+        return;
+    }
     const textContainer = document.getElementById("text-channels-container");
     const voiceContainer = document.getElementById("voice-channels-container");
     
@@ -973,7 +1108,10 @@ function createMemberRow(m) {
 async function selectTextChannel(channelId, channelName) {
     toggleMobileSidebar(false);
     activeChannelId = channelId;
+    activeDmChannelId = null;
     showView('chat');
+    const callBtn = document.getElementById("btn-go-to-call");
+    if (callBtn) callBtn.classList.remove("hidden");
     
     // Atualizar cabeçalho
     document.getElementById("chat-header-name").innerText = channelName;
@@ -994,7 +1132,7 @@ async function selectTextChannel(channelId, channelName) {
         
         const container = document.getElementById("messages-container");
         container.innerHTML = "";
-        
+            
         messages.forEach(msg => {
             appendChatMessage(msg);
         });
@@ -1006,13 +1144,59 @@ async function selectTextChannel(channelId, channelName) {
 
 function appendChatMessage(msg) {
     const container = document.getElementById("messages-container");
+    if (!container) return;
     
     const displayName = msg.display_name || msg.username;
     const initials = displayName.slice(0, 2).toUpperCase();
     const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
+    const isMyMessage = msg.user_id === currentUser.id;
+    
     const msgEl = document.createElement("div");
-    msgEl.className = "flex items-start space-x-4 select-text hover:bg-discord-dark hover:bg-opacity-20 px-2 py-1 rounded transition-colors";
+    msgEl.className = "flex items-start space-x-4 select-text hover:bg-discord-dark hover:bg-opacity-20 px-2 py-1.5 rounded transition-colors group relative";
+    msgEl.id = `chat-message-${msg.id}`;
+    
+    // Formatar conteúdo
+    const formattedContent = parseMarkdown(msg.content);
+    
+    // Renderizar anexo se houver
+    let attachmentHtml = "";
+    if (msg.attachment_url) {
+        if (msg.attachment_type && msg.attachment_type.startsWith("image/")) {
+            attachmentHtml = `
+                <div class="mt-2 rounded overflow-hidden max-w-xs max-h-60 border border-gray-800 bg-black bg-opacity-30">
+                    <img src="${msg.attachment_url}" class="max-w-full max-h-full object-contain cursor-zoom-in hover:brightness-95 transition-all" onclick="window.open(this.src, '_blank')">
+                </div>
+            `;
+        } else {
+            attachmentHtml = `
+                <a href="${msg.attachment_url}" download="anexo" class="flex items-center space-x-3 bg-[#2b2d31] hover:bg-[#35373c] border border-[#1e1f22] p-3 rounded-lg w-fit mt-2 transition-all group/btn cursor-pointer">
+                    <div class="w-10 h-10 bg-discord-darkest rounded flex items-center justify-center text-gray-400 group-hover/btn:text-white transition-colors">
+                        <i data-lucide="file-text" class="w-5 h-5"></i>
+                    </div>
+                    <div class="flex flex-col min-w-0">
+                        <span class="text-xs font-semibold text-gray-200 truncate max-w-[180px]">Baixar Anexo</span>
+                        <span class="text-[9px] text-gray-400">Clique para salvar</span>
+                    </div>
+                </a>
+            `;
+        }
+    }
+    
+    // Controles de Mensagem (Editar / Excluir)
+    let controlsHtml = "";
+    if (isMyMessage) {
+        controlsHtml = `
+            <div class="absolute right-4 top-2 bg-discord-darkest border border-gray-800 rounded shadow-lg px-1 py-0.5 space-x-1 hidden group-hover:flex z-10">
+                <button onclick="startEditMessage(${msg.id})" class="p-1 hover:bg-discord-light text-gray-400 hover:text-white rounded transition-colors" title="Editar Mensagem">
+                    <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                </button>
+                <button onclick="deleteMessageFromServer(${msg.id})" class="p-1 hover:bg-discord-red text-gray-400 hover:text-white rounded transition-colors" title="Excluir Mensagem">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+            </div>
+        `;
+    }
     
     msgEl.innerHTML = `
         <div class="relative flex-shrink-0">
@@ -1024,16 +1208,23 @@ function appendChatMessage(msg) {
                 </div>
             `}
         </div>
-        <div class="flex flex-col min-w-0">
+        <div class="flex flex-col min-w-0 flex-1">
             <div class="flex items-baseline space-x-2">
                 <span class="font-bold text-white text-sm hover:underline cursor-pointer">${displayName}</span>
                 <span class="text-[10px] text-gray-400 font-medium">${time}</span>
+                <span id="edit-tag-${msg.id}" class="text-[9px] text-gray-500 font-medium ${msg.is_edited ? '' : 'hidden'}">(editado)</span>
             </div>
-            <p class="text-gray-300 text-sm whitespace-pre-wrap break-all mt-0.5">${msg.content}</p>
+            
+            <div id="message-content-wrapper-${msg.id}" class="mt-0.5">
+                <p id="message-text-${msg.id}" class="text-gray-300 text-sm whitespace-pre-wrap break-all">${formattedContent}</p>
+                ${attachmentHtml}
+            </div>
         </div>
+        ${controlsHtml}
     `;
     
     container.appendChild(msgEl);
+    lucide.createIcons();
     
     // Rolar para o final
     container.scrollTop = container.scrollHeight;
@@ -1043,15 +1234,376 @@ async function handleSendChatMessage(e) {
     e.preventDefault();
     const input = document.getElementById("chat-input");
     const content = input.value.trim();
-    if (!content || !activeChannelId) return;
     
-    sendWsMessage({
+    if (!content && !chatAttachmentBase64) return;
+    if (!activeChannelId && !activeDmChannelId) return;
+    
+    const payload = {
         type: "chat_message",
-        channel_id: activeChannelId,
         content: content
-    });
+    };
+    
+    if (activeServerId !== null) {
+        payload.channel_id = activeChannelId;
+    } else {
+        payload.dm_channel_id = activeDmChannelId;
+    }
+    
+    if (chatAttachmentBase64) {
+        payload.attachment_url = chatAttachmentBase64;
+        payload.attachment_type = chatAttachmentType;
+    }
+    
+    sendWsMessage(payload);
+    
+    // Parar de digitar ao enviar a mensagem
+    if (isTyping) {
+        isTyping = false;
+        sendTypingStatus(false);
+    }
     
     input.value = "";
+    clearChatAttachment();
+}
+
+function handleChatInputKeypress() {
+    if (!isTyping) {
+        isTyping = true;
+        sendTypingStatus(true);
+    }
+    
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => {
+        isTyping = false;
+        sendTypingStatus(false);
+    }, 3000);
+}
+
+function sendTypingStatus(typing) {
+    const payload = {
+        type: "typing_status",
+        typing: typing
+    };
+    if (activeServerId !== null) {
+        payload.channel_id = activeChannelId;
+    } else {
+        payload.dm_channel_id = activeDmChannelId;
+    }
+    sendWsMessage(payload);
+}
+
+function handleChatAttachmentSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    if (file.size > 2 * 1024 * 1024) {
+        alert("O anexo é muito grande. O limite máximo é de 2 MB.");
+        event.target.value = "";
+        return;
+    }
+    
+    chatAttachmentName = file.name;
+    chatAttachmentType = file.type;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        chatAttachmentBase64 = e.target.result;
+        
+        const previewContainer = document.getElementById("chat-attachment-preview-container");
+        const previewMedia = document.getElementById("chat-attachment-preview-media");
+        const previewName = document.getElementById("chat-attachment-preview-name");
+        
+        previewName.innerText = file.name;
+        
+        if (file.type.startsWith("image/")) {
+            previewMedia.innerHTML = `<img src="${chatAttachmentBase64}" class="w-full h-full object-cover">`;
+        } else {
+            previewMedia.innerHTML = `<i data-lucide="file-text" class="w-5 h-5 text-gray-400"></i>`;
+            lucide.createIcons();
+        }
+        
+        previewContainer.classList.remove("hidden");
+    };
+    reader.onerror = () => {
+        alert("Erro ao ler o arquivo.");
+    };
+    reader.readAsDataURL(file);
+}
+
+function clearChatAttachment() {
+    chatAttachmentBase64 = null;
+    chatAttachmentType = null;
+    chatAttachmentName = null;
+    
+    const fileInput = document.getElementById("chat-attachment-file");
+    if (fileInput) fileInput.value = "";
+    
+    const previewContainer = document.getElementById("chat-attachment-preview-container");
+    if (previewContainer) previewContainer.classList.add("hidden");
+}
+
+// Edição de Mensagens
+let editingMessages = {};
+
+function startEditMessage(messageId) {
+    const textEl = document.getElementById(`message-text-${messageId}`);
+    if (!textEl) return;
+    
+    if (editingMessages[messageId] !== undefined) return;
+    
+    const wrapper = document.getElementById(`message-content-wrapper-${messageId}`);
+    const originalText = editingMessages[messageId] = textEl.innerText;
+    
+    wrapper.innerHTML = `
+        <div class="flex flex-col space-y-1.5 mt-1 bg-discord-input rounded p-2 border border-gray-800">
+            <input type="text" id="edit-input-${messageId}" value="${originalText.replace(/"/g, '&quot;')}" class="bg-transparent text-white outline-none text-sm w-full">
+            <div class="text-[10px] text-gray-400">
+                Esc para <button onclick="cancelEditMessage(${messageId})" class="text-discord-brand hover:underline font-semibold">cancelar</button> • Enter para <button onclick="saveEditMessage(${messageId})" class="text-discord-green hover:underline font-semibold">salvar</button>
+            </div>
+        </div>
+    `;
+    
+    const input = document.getElementById(`edit-input-${messageId}`);
+    input.focus();
+    input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            saveEditMessage(messageId);
+        } else if (e.key === "Escape") {
+            cancelEditMessage(messageId);
+        }
+    });
+}
+
+function cancelEditMessage(messageId) {
+    const originalText = editingMessages[messageId];
+    if (originalText === undefined) return;
+    
+    delete editingMessages[messageId];
+    
+    if (activeServerId !== null) {
+        selectTextChannel(activeChannelId, document.getElementById("chat-header-name").innerText);
+    } else {
+        openDMChannel(activeDmChannelId, document.getElementById("chat-header-name").innerText);
+    }
+}
+
+async function saveEditMessage(messageId) {
+    const input = document.getElementById(`edit-input-${messageId}`);
+    if (!input) return;
+    const newContent = input.value.trim();
+    if (!newContent) return;
+    
+    try {
+        const res = await fetch(`${API_URL}/api/messages/${messageId}?token=${currentUser.token}`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ content: newContent })
+        });
+        
+        if (res.ok) {
+            delete editingMessages[messageId];
+        } else {
+            alert("Erro ao editar mensagem.");
+            cancelEditMessage(messageId);
+        }
+    } catch (e) {
+        console.error("Erro ao salvar mensagem:", e);
+        cancelEditMessage(messageId);
+    }
+}
+
+async function deleteMessageFromServer(messageId) {
+    if (!confirm("Tem certeza que deseja excluir esta mensagem?")) return;
+    
+    try {
+        const res = await fetch(`${API_URL}/api/messages/${messageId}?token=${currentUser.token}`, {
+            method: "DELETE"
+        });
+        if (!res.ok) {
+            alert("Erro ao excluir mensagem.");
+        }
+    } catch (e) {
+        console.error("Erro ao excluir mensagem:", e);
+    }
+}
+
+// DMs (Conversas Diretas)
+async function loadHomeUsersList() {
+    const container = document.getElementById("home-users-list-container");
+    if (!container) return;
+    container.innerHTML = `<p class="text-xs text-gray-500 p-2">Carregando usuários...</p>`;
+    
+    try {
+        // Obter os membros do primeiro servidor padrão (Comunidade Principal) para usar como lista de amigos/usuários
+        const res = await fetch(`${API_URL}/api/servers?token=${currentUser.token}`);
+        if (!res.ok) throw new Error();
+        const serverList = await res.json();
+        if (serverList.length === 0) {
+            container.innerHTML = `<p class="text-xs text-gray-500 p-2">Nenhum usuário disponível.</p>`;
+            return;
+        }
+        
+        const defaultServer = serverList[0];
+        const resMem = await fetch(`${API_URL}/api/servers/${defaultServer.id}/members?token=${currentUser.token}`);
+        if (!resMem.ok) throw new Error();
+        const members = await resMem.json();
+        
+        container.innerHTML = "";
+        
+        // Listar todos os outros usuários do sistema
+        const others = members.filter(m => m.id !== currentUser.id);
+        if (others.length === 0) {
+            container.innerHTML = `<p class="text-xs text-gray-500 p-2">Nenhum outro usuário cadastrado no servidor principal.</p>`;
+            return;
+        }
+        
+        others.forEach(m => {
+            const row = document.createElement("div");
+            row.className = "flex items-center justify-between p-1.5 rounded hover:bg-discord-light cursor-pointer text-gray-300 hover:text-white transition-colors group";
+            row.onclick = () => startDMWithUser(m.id);
+            
+            const displayName = m.display_name || m.username;
+            const initials = displayName.slice(0, 2).toUpperCase();
+            
+            row.innerHTML = `
+                <div class="flex items-center space-x-2.5 min-w-0">
+                    <div class="relative flex-shrink-0">
+                        ${m.avatar_url ? `
+                            <img src="${m.avatar_url}" class="w-8 h-8 rounded-full object-cover">
+                        ` : `
+                            <div class="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs" style="background-color: ${m.avatar_color}">
+                                ${initials}
+                            </div>
+                        `}
+                        <span class="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full border-2 border-discord-dark ${m.online ? 'bg-discord-green' : 'bg-gray-500'}"></span>
+                    </div>
+                    <div class="flex flex-col min-w-0">
+                        <span class="text-sm font-medium truncate">${displayName}</span>
+                        ${m.custom_status ? `<span class="text-[10px] text-gray-500 truncate">${m.custom_status}</span>` : ""}
+                    </div>
+                </div>
+                <button class="bg-[#2b2d31] hover:bg-discord-brand text-white p-1.5 rounded-full transition-colors hidden group-hover:block" title="Enviar Mensagem Direta">
+                    <i data-lucide="message-square" class="w-3.5 h-3.5"></i>
+                </button>
+            `;
+            
+            container.appendChild(row);
+        });
+        
+        lucide.createIcons();
+    } catch (err) {
+        console.error("Erro ao carregar lista de usuários:", err);
+        container.innerHTML = `<p class="text-xs text-red-400 p-2">Erro ao carregar usuários.</p>`;
+    }
+}
+
+async function renderDMChannelsList() {
+    const container = document.getElementById("dms-list-container");
+    if (!container) return;
+    container.innerHTML = "";
+    
+    try {
+        const res = await fetch(`${API_URL}/api/dms?token=${currentUser.token}`);
+        if (!res.ok) throw new Error();
+        dmChannels = await res.json();
+        
+        if (dmChannels.length === 0) {
+            container.innerHTML = `<p class="text-[10px] text-gray-500 px-2 italic">Nenhuma DM aberta.</p>`;
+            return;
+        }
+        
+        dmChannels.forEach(dm => {
+            const isSelected = activeServerId === null && activeDmChannelId === dm.dm_channel_id;
+            
+            const btn = document.createElement("div");
+            btn.className = `flex items-center space-x-2 py-1.5 px-2 rounded cursor-pointer transition-colors duration-150 hover:bg-discord-light text-gray-400 hover:text-gray-200 ${isSelected ? 'bg-discord-light text-white font-medium' : ''}`;
+            btn.onclick = () => openDMChannel(dm.dm_channel_id, dm.display_name || dm.username);
+            
+            const displayName = dm.display_name || dm.username;
+            const initials = displayName.slice(0, 2).toUpperCase();
+            const isRecipientOnline = dm.recipient_id in remoteAudioStreams || false; // Simplificação de online se estiver em conexão ou geral
+            
+            btn.innerHTML = `
+                <div class="relative flex-shrink-0">
+                    ${dm.avatar_url ? `
+                        <img src="${dm.avatar_url}" class="w-6 h-6 rounded-full object-cover">
+                    ` : `
+                        <div class="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-[10px]" style="background-color: ${dm.avatar_color}">
+                            ${initials}
+                        </div>
+                    `}
+                </div>
+                <span class="truncate text-sm flex-1">${displayName}</span>
+            `;
+            container.appendChild(btn);
+        });
+    } catch (err) {
+        console.error("Erro ao carregar lista de DMs:", err);
+    }
+}
+
+async function startDMWithUser(recipientId) {
+    try {
+        const res = await fetch(`${API_URL}/api/dms?token=${currentUser.token}`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ recipient_id: recipientId })
+        });
+        
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        
+        // Recarregar barra de DMs
+        await renderDMChannelsList();
+        
+        const dm = dmChannels.find(d => d.dm_channel_id === data.dm_channel_id);
+        openDMChannel(data.dm_channel_id, dm ? (dm.display_name || dm.username) : "Conversa Direta");
+    } catch (err) {
+        console.error("Erro ao iniciar conversa de DM:", err);
+    }
+}
+
+async function openDMChannel(dmChannelId, recipientName) {
+    toggleMobileSidebar(false);
+    activeServerId = null;
+    activeChannelId = null;
+    activeDmChannelId = dmChannelId;
+    
+    // Atualizar barra lateral de DMs selecionada
+    renderDMChannelsList();
+    
+    document.getElementById("home-indicator").className = "absolute left-0 w-1 bg-white rounded-r-md h-10 transition-all duration-200";
+    document.getElementById("server-header-name").innerText = "Mensagens Diretas";
+    
+    showView('chat');
+    
+    document.getElementById("chat-header-name").innerText = recipientName;
+    document.getElementById("chat-input").placeholder = `Conversar com @${recipientName}`;
+    document.getElementById("btn-go-to-call").classList.add("hidden");
+    
+    // Carregar histórico
+    try {
+        const res = await fetch(`${API_URL}/api/dms/${dmChannelId}/messages?token=${currentUser.token}`);
+        if (res.status === 401) {
+            logout();
+            return;
+        }
+        if (!res.ok) throw new Error();
+        const messages = await res.json();
+        
+        const container = document.getElementById("messages-container");
+        container.innerHTML = "";
+        
+        messages.forEach(msg => {
+            appendChatMessage(msg);
+        });
+    } catch (err) {
+        console.error("Erro ao carregar mensagens de DM:", err);
+    }
 }
 
 // --- Chamada de Voz e WebRTC ---
