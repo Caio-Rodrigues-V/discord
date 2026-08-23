@@ -526,7 +526,7 @@ function handleWebSocketMessage(msg) {
                 currentUser.avatar_url = updatedUser.avatar_url;
                 currentUser.custom_status = updatedUser.custom_status;
                 
-                localStorage.setItem("discord_user", JSON.stringify(currentUser));
+                localStorage.setItem("user", JSON.stringify(currentUser));
                 
                 document.getElementById("user-panel-name").innerText = currentUser.username;
                 const avatar = document.getElementById("user-avatar-circle");
