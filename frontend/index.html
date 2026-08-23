@@ -206,6 +206,9 @@
                     <button onclick="openSystemLogs()" class="p-1.5 hover:bg-discord-light hover:text-white rounded transition-colors" title="Ver Logs do Sistema">
                         <i data-lucide="terminal" class="w-4 h-4"></i>
                     </button>
+                    <button onclick="toggleModal('user-settings-modal', true); populateUserSettings();" class="p-1.5 hover:bg-discord-light hover:text-white rounded transition-colors" title="Configurações de Usuário">
+                        <i data-lucide="settings" class="w-4 h-4"></i>
+                    </button>
                     <button onclick="logout()" class="p-1.5 hover:bg-discord-light hover:text-discord-red rounded transition-colors" title="Sair da Conta">
                         <i data-lucide="log-out" class="w-4 h-4"></i>
                     </button>
@@ -441,6 +444,51 @@
         </div>
     </div>
 
+    <!-- Modal Configurações de Usuário -->
+    <div id="user-settings-modal" class="modal-overlay hidden">
+        <div class="bg-discord-dark p-6 rounded-md w-full max-w-[450px] border border-gray-800 shadow-2xl relative">
+            <button onclick="toggleModal('user-settings-modal', false)" class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+            <h3 class="text-xl font-bold text-white mb-2">Configurações de Usuário</h3>
+            <p class="text-gray-400 text-xs mb-6">Personalize sua conta e como os outros te veem no servidor.</p>
+            
+            <form id="user-settings-form" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Nome de Usuário</label>
+                    <input type="text" id="settings-username" required class="w-full bg-discord-darkest text-white border border-transparent focus:border-discord-brand p-2.5 rounded outline-none text-sm transition-all">
+                </div>
+                
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">URL do Avatar (Foto de Perfil)</label>
+                    <input type="url" id="settings-avatar-url" placeholder="https://exemplo.com/sua-foto.jpg" class="w-full bg-discord-darkest text-white border border-transparent focus:border-discord-brand p-2.5 rounded outline-none text-sm transition-all">
+                    <p class="text-[10px] text-gray-500 mt-1">Insira o link direto de uma imagem (JPG, PNG, GIF) para usar como foto de perfil.</p>
+                </div>
+                
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Status Personalizado</label>
+                    <input type="text" id="settings-custom-status" placeholder="😎 Jogando Valorant..." maxlength="100" class="w-full bg-discord-darkest text-white border border-transparent focus:border-discord-brand p-2.5 rounded outline-none text-sm transition-all">
+                </div>
+                
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Cor do Avatar (Fallback)</label>
+                    <div class="flex items-center space-x-2 mt-1.5" id="settings-color-palette">
+                        <button type="button" onclick="selectAvatarColor('#5865F2')" class="w-7 h-7 rounded-full border-2 border-transparent hover:scale-110 transition-transform" style="background-color: #5865F2;" data-color="#5865F2"></button>
+                        <button type="button" onclick="selectAvatarColor('#57F287')" class="w-7 h-7 rounded-full border-2 border-transparent hover:scale-110 transition-transform" style="background-color: #57F287;" data-color="#57F287"></button>
+                        <button type="button" onclick="selectAvatarColor('#FEE75C')" class="w-7 h-7 rounded-full border-2 border-transparent hover:scale-110 transition-transform" style="background-color: #FEE75C;" data-color="#FEE75C"></button>
+                        <button type="button" onclick="selectAvatarColor('#EB459E')" class="w-7 h-7 rounded-full border-2 border-transparent hover:scale-110 transition-transform" style="background-color: #EB459E;" data-color="#EB459E"></button>
+                        <button type="button" onclick="selectAvatarColor('#ED4245')" class="w-7 h-7 rounded-full border-2 border-transparent hover:scale-110 transition-transform" style="background-color: #ED4245;" data-color="#ED4245"></button>
+                    </div>
+                </div>
+                
+                <div class="flex items-center justify-end space-x-3 pt-4 border-t border-gray-800">
+                    <button type="button" onclick="toggleModal('user-settings-modal', false)" class="text-gray-400 hover:text-white text-sm font-medium">Cancelar</button>
+                    <button type="submit" class="bg-discord-green hover:bg-discord-greenHover text-white px-5 py-2.5 rounded text-sm font-medium transition-colors">Salvar Alterações</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Menu de Contexto do Usuário na Chamada de Voz -->
     <div id="user-context-menu" class="hidden fixed z-50 bg-discord-darkest border border-gray-800 rounded shadow-2xl p-2 text-sm text-gray-300 w-52 space-y-1">
         <!-- Volume do Usuário -->
@@ -470,6 +518,6 @@
     </div>
 
     <!-- Main JS Application script -->
-    <script src="/app.js?v=3"></script>
+    <script src="/app.js?v=4"></script>
 </body>
 </html>

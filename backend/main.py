@@ -151,7 +151,7 @@ def register(data: RegisterModel):
     token = create_access_token(user_id, data.username)
     return {
         "token": token,
-        "user": {"id": user_id, "username": data.username, "avatar_color": avatar_color}
+        "user": {"id": user_id, "username": data.username, "avatar_color": avatar_color, "avatar_url": None, "custom_status": None}
     }
 
 @app.post("/api/auth/login")
@@ -166,8 +166,66 @@ def login(data: LoginModel):
     token = create_access_token(user["id"], user["username"])
     return {
         "token": token,
-        "user": {"id": user["id"], "username": user["username"], "avatar_color": user["avatar_color"]}
+        "user": {
+            "id": user["id"],
+            "username": user["username"],
+            "avatar_color": user["avatar_color"],
+            "avatar_url": user.get("avatar_url"),
+            "custom_status": user.get("custom_status")
+        }
     }
+
+
+class UpdateProfileModel(BaseModel):
+    username: Optional[str] = None
+    avatar_color: Optional[str] = None
+    avatar_url: Optional[str] = None
+    custom_status: Optional[str] = None
+
+@app.put("/api/users/me")
+async def update_profile(data: UpdateProfileModel, token: str = Query(...)):
+    user = get_current_user_from_header(token)
+    
+    conn = get_db()
+    cursor = get_cursor(conn)
+    
+    try:
+        if data.username and data.username != user["username"]:
+            cursor.execute(qry("SELECT id FROM users WHERE username = ?"), (data.username,))
+            if cursor.fetchone():
+                raise HTTPException(status_code=400, detail="Nome de usuário já está em uso.")
+            cursor.execute(qry("UPDATE users SET username = ? WHERE id = ?"), (data.username, user["id"]))
+            
+        if data.avatar_color:
+            cursor.execute(qry("UPDATE users SET avatar_color = ? WHERE id = ?"), (data.avatar_color, user["id"]))
+            
+        if data.avatar_url is not None:
+            val = data.avatar_url.strip() if data.avatar_url.strip() else None
+            cursor.execute(qry("UPDATE users SET avatar_url = ? WHERE id = ?"), (val, user["id"]))
+            
+        if data.custom_status is not None:
+            val = data.custom_status.strip() if data.custom_status.strip() else None
+            cursor.execute(qry("UPDATE users SET custom_status = ? WHERE id = ?"), (val, user["id"]))
+            
+        conn.commit()
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Erro ao atualizar perfil: {e}")
+    finally:
+        conn.close()
+        
+    updated = get_user_by_id(user["id"])
+    
+    # Transmitir a alteração para todos os usuários conectados
+    all_connected = list(manager.active_connections.keys())
+    await manager.broadcast_to_users({
+        "type": "user_profile_updated",
+        "user": updated
+    }, all_connected)
+    
+    return updated
 
 
 # --- Rotas de Servidores ---
@@ -217,7 +275,10 @@ def create_new_channel(server_id: int, data: ChannelCreateModel, token: str = Qu
 @app.get("/api/servers/{server_id}/members")
 def list_members(server_id: int, token: str = Query(...)):
     get_current_user_from_header(token)
-    return get_server_members(server_id)
+    members = get_server_members(server_id)
+    for m in members:
+        m["online"] = m["id"] in manager.active_connections
+    return members
 
 
 # --- Rotas de Mensagens ---
@@ -391,6 +452,11 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
     avatar_color = user_details["avatar_color"] if user_details else "#5865F2"
     
     await manager.connect(websocket, user_id, username, avatar_color)
+    await manager.broadcast_to_users({
+        "type": "user_status_changed",
+        "user_id": user_id,
+        "online": True
+    }, list(manager.active_connections.keys()))
     
     try:
         while True:
@@ -578,8 +644,13 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
     except WebSocketDisconnect:
         channel_id, remaining = manager.leave_voice_channel_if_any(user_id)
         manager.disconnect(user_id)
+        all_connected = list(manager.active_connections.keys())
+        await manager.broadcast_to_users({
+            "type": "user_status_changed",
+            "user_id": user_id,
+            "online": False
+        }, all_connected)
         if channel_id:
-            all_connected = list(manager.active_connections.keys())
             await manager.broadcast_to_users({
                 "type": "voice_user_left",
                 "channel_id": channel_id,
@@ -589,13 +660,18 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
         print(f"Erro na conexão WebSocket do usuário {user_id}: {e}")
         channel_id, remaining = manager.leave_voice_channel_if_any(user_id)
         manager.disconnect(user_id)
-        if channel_id:
-            try:
-                all_connected = list(manager.active_connections.keys())
+        try:
+            all_connected = list(manager.active_connections.keys())
+            await manager.broadcast_to_users({
+                "type": "user_status_changed",
+                "user_id": user_id,
+                "online": False
+            }, all_connected)
+            if channel_id:
                 await manager.broadcast_to_users({
                     "type": "voice_user_left",
                     "channel_id": channel_id,
                     "user_id": user_id
                 }, all_connected)
-            except Exception:
-                pass
+        except Exception:
+            pass

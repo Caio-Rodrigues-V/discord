@@ -187,6 +187,9 @@ function setupEventListeners() {
     
     // Criação de Canal
     document.getElementById("create-channel-form").addEventListener("submit", handleCreateChannel);
+    
+    // Configurações de Usuário
+    document.getElementById("user-settings-form").addEventListener("submit", handleSettingsSubmit);
 }
 
 // --- Autenticação ---
@@ -214,8 +217,12 @@ function showApp() {
     
     // Configurar Painel do Usuário no rodapé
     const avatarCircle = document.getElementById("user-avatar-circle");
-    avatarCircle.innerText = currentUser.username.slice(0, 2).toUpperCase();
     avatarCircle.style.backgroundColor = currentUser.avatar_color;
+    if (currentUser.avatar_url) {
+        avatarCircle.innerHTML = `<img src="${currentUser.avatar_url}" class="w-8 h-8 rounded-full object-cover">`;
+    } else {
+        avatarCircle.innerText = currentUser.username.slice(0, 2).toUpperCase();
+    }
     document.getElementById("user-panel-name").innerText = currentUser.username;
     
     // Inicializar WebSocket e carregar dados
@@ -476,6 +483,61 @@ function handleWebSocketMessage(msg) {
         case "webrtc_signal":
             // Mensagem de sinalização WebRTC recebida de um peer
             handleWebRTCSignal(msg.sender_id, msg.signal);
+            break;
+            
+        case "user_status_changed":
+            const statusUser = currentServerMembers.find(m => m.id === msg.user_id);
+            if (statusUser) {
+                statusUser.online = msg.online;
+                renderServerMembersUI();
+            }
+            break;
+            
+        case "user_profile_updated":
+            const updatedUser = msg.user;
+            
+            const memberIdx = currentServerMembers.findIndex(m => m.id === updatedUser.id);
+            if (memberIdx !== -1) {
+                currentServerMembers[memberIdx] = {
+                    ...currentServerMembers[memberIdx],
+                    username: updatedUser.username,
+                    avatar_color: updatedUser.avatar_color,
+                    avatar_url: updatedUser.avatar_url,
+                    custom_status: updatedUser.custom_status
+                };
+                renderServerMembersUI();
+            }
+            
+            const activeCallUserIdx = activeVoiceUsers.findIndex(u => u.id === updatedUser.id);
+            if (activeCallUserIdx !== -1) {
+                activeVoiceUsers[activeCallUserIdx] = {
+                    ...activeVoiceUsers[activeCallUserIdx],
+                    username: updatedUser.username,
+                    avatar_color: updatedUser.avatar_color,
+                    avatar_url: updatedUser.avatar_url,
+                    custom_status: updatedUser.custom_status
+                };
+                renderVoiceGrid();
+            }
+            
+            if (updatedUser.id === currentUser.id) {
+                currentUser.username = updatedUser.username;
+                currentUser.avatar_color = updatedUser.avatar_color;
+                currentUser.avatar_url = updatedUser.avatar_url;
+                currentUser.custom_status = updatedUser.custom_status;
+                
+                localStorage.setItem("discord_user", JSON.stringify(currentUser));
+                
+                document.getElementById("user-panel-name").innerText = currentUser.username;
+                const avatar = document.getElementById("user-avatar-circle");
+                if (avatar) {
+                    avatar.style.backgroundColor = currentUser.avatar_color;
+                    avatar.innerText = currentUser.username.slice(0, 2).toUpperCase();
+                    if (currentUser.avatar_url) {
+                        avatar.innerHTML = `<img src="${currentUser.avatar_url}" class="w-8 h-8 rounded-full object-cover">`;
+                    }
+                }
+            }
             break;
             
         case "voice_speaking":
@@ -789,6 +851,8 @@ function renderChannels() {
     lucide.createIcons();
 }
 
+let currentServerMembers = []; // Cache do estado dos membros do servidor ativo
+
 async function loadServerMembers(serverId) {
     try {
         const res = await fetch(`${API_URL}/api/servers/${serverId}/members?token=${currentUser.token}`);
@@ -798,29 +862,71 @@ async function loadServerMembers(serverId) {
         }
         if (!res.ok) throw new Error();
         const members = await res.json();
+        currentServerMembers = members;
         
-        document.getElementById("members-count").innerText = members.length;
-        const container = document.getElementById("members-list-container");
-        container.innerHTML = "";
-        
-        members.forEach(m => {
-            const row = document.createElement("div");
-            row.className = "flex items-center space-x-2.5 p-1.5 rounded hover:bg-discord-light cursor-pointer text-gray-300 hover:text-white";
-            
-            const initials = m.username.slice(0, 2).toUpperCase();
-            
-            row.innerHTML = `
-                <div class="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs" style="background-color: ${m.avatar_color}">
-                    ${initials}
-                </div>
-                <span class="text-sm font-medium truncate">${m.username}</span>
-            `;
-            container.appendChild(row);
-        });
-        
+        renderServerMembersUI();
     } catch (e) {
         console.error("Erro ao carregar membros:", e);
     }
+}
+
+function renderServerMembersUI() {
+    const container = document.getElementById("members-list-container");
+    if (!container) return;
+    container.innerHTML = "";
+    
+    const onlineMembers = currentServerMembers.filter(m => m.online);
+    const offlineMembers = currentServerMembers.filter(m => !m.online);
+    
+    document.getElementById("members-count").innerText = currentServerMembers.length;
+    
+    if (onlineMembers.length > 0) {
+        const header = document.createElement("div");
+        header.className = "text-[11px] font-bold text-gray-400 uppercase tracking-wider px-2 py-2 pt-3";
+        header.innerText = `Disponível — ${onlineMembers.length}`;
+        container.appendChild(header);
+        
+        onlineMembers.forEach(m => {
+            container.appendChild(createMemberRow(m));
+        });
+    }
+    
+    if (offlineMembers.length > 0) {
+        const header = document.createElement("div");
+        header.className = "text-[11px] font-bold text-gray-400 uppercase tracking-wider px-2 py-2 pt-4";
+        header.innerText = `Offline — ${offlineMembers.length}`;
+        container.appendChild(header);
+        
+        offlineMembers.forEach(m => {
+            container.appendChild(createMemberRow(m));
+        });
+    }
+}
+
+function createMemberRow(m) {
+    const row = document.createElement("div");
+    row.className = "flex items-center space-x-2.5 p-1.5 rounded hover:bg-discord-light cursor-pointer text-gray-300 hover:text-white";
+    
+    const initials = m.username.slice(0, 2).toUpperCase();
+    
+    row.innerHTML = `
+        <div class="relative flex-shrink-0">
+            ${m.avatar_url ? `
+                <img src="${m.avatar_url}" class="w-8 h-8 rounded-full object-cover">
+            ` : `
+                <div class="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs" style="background-color: ${m.avatar_color}">
+                    ${initials}
+                </div>
+            `}
+            <span class="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full border-2 border-discord-dark ${m.online ? 'bg-discord-green' : 'bg-gray-500'}"></span>
+        </div>
+        <div class="flex flex-col min-w-0 flex-1">
+            <span class="text-sm font-medium truncate ${m.online ? 'text-gray-200' : 'text-gray-400'}">${m.username}</span>
+            ${m.custom_status ? `<span class="text-[10px] text-gray-500 truncate" title="${m.custom_status}">${m.custom_status}</span>` : ''}
+        </div>
+    `;
+    
+    return row;
 }
 
 // --- Chat de Texto ---
@@ -1532,9 +1638,13 @@ function createVoiceUserCard(userId, isLarge) {
         
         <!-- Avatar do Usuário -->
         <div id="avatar-peer-${user.id}" class="absolute flex flex-col items-center space-y-3 ${user.sharingScreen ? 'hidden' : ''}">
-            <div class="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-xl transition-all duration-300 ${speakingClass}" style="background-color: ${user.avatar_color}">
-                ${initials}
-            </div>
+            ${user.avatar_url ? `
+                <img src="${user.avatar_url}" class="w-16 h-16 rounded-full object-cover transition-all duration-300 ${speakingClass}">
+            ` : `
+                <div class="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-xl transition-all duration-300 ${speakingClass}" style="background-color: ${user.avatar_color}">
+                    ${initials}
+                </div>
+            `}
         </div>
         
         <!-- Badge com Nome de Usuário -->
@@ -1906,5 +2016,75 @@ function updatePingUI(rtt) {
         const currentChannel = channels.find(c => c.id === activeVoiceChannelId);
         const channelName = currentChannel ? currentChannel.name : "Chamada";
         statusSubtext.innerText = `${channelName} / ${rtt}ms`;
+    }
+}
+
+// --- Configurações de Usuário (Perfil) ---
+let selectedSettingsColor = "";
+
+function populateUserSettings() {
+    if (!currentUser) return;
+    
+    document.getElementById("settings-username").value = currentUser.username;
+    document.getElementById("settings-avatar-url").value = currentUser.avatar_url || "";
+    document.getElementById("settings-custom-status").value = currentUser.custom_status || "";
+    
+    selectedSettingsColor = currentUser.avatar_color;
+    selectAvatarColor(currentUser.avatar_color);
+}
+
+function selectAvatarColor(color) {
+    selectedSettingsColor = color;
+    const buttons = document.querySelectorAll("#settings-color-palette button");
+    buttons.forEach(btn => {
+        const btnColor = btn.getAttribute("data-color");
+        if (btnColor === color) {
+            btn.className = "w-7 h-7 rounded-full border-2 border-white scale-110 shadow-lg transition-transform";
+        } else {
+            btn.className = "w-7 h-7 rounded-full border-2 border-transparent hover:scale-110 transition-transform";
+        }
+    });
+}
+
+async function handleSettingsSubmit(e) {
+    e.preventDefault();
+    if (!currentUser) return;
+    
+    const username = document.getElementById("settings-username").value.trim();
+    const avatarUrl = document.getElementById("settings-avatar-url").value.trim();
+    const customStatus = document.getElementById("settings-custom-status").value.trim();
+    
+    if (!username) return;
+    
+    try {
+        const res = await fetch(`${API_URL}/api/users/me?token=${currentUser.token}`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                username: username,
+                avatar_color: selectedSettingsColor,
+                avatar_url: avatarUrl,
+                custom_status: customStatus
+            })
+        });
+        
+        if (res.status === 401) {
+            logout();
+            return;
+        }
+        
+        if (!res.ok) {
+            const data = await res.json();
+            alert(data.detail || "Erro ao salvar configurações.");
+            return;
+        }
+        
+        toggleModal("user-settings-modal", false);
+        
+    } catch (err) {
+        console.error("Erro ao salvar configurações:", err);
+        alert("Erro de conexão ao salvar configurações.");
     }
 }

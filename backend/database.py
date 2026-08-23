@@ -149,6 +149,23 @@ def init_db():
         """)
         print("Banco de dados SQLite inicializado.")
         
+    # Migrações seguras de colunas
+    try:
+        if IS_POSTGRES:
+            cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;")
+            cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_status VARCHAR(255);")
+        else:
+            try:
+                cursor.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT;")
+            except Exception:
+                pass
+            try:
+                cursor.execute("ALTER TABLE users ADD COLUMN custom_status TEXT;")
+            except Exception:
+                pass
+    except Exception as e:
+        print("Erro nas migrações de colunas:", e)
+        
     conn.commit()
     conn.close()
 
@@ -187,7 +204,7 @@ def get_user_by_username(username):
 def get_user_by_id(user_id):
     conn = get_db()
     cursor = get_cursor(conn)
-    cursor.execute(qry("SELECT id, username, avatar_color, created_at FROM users WHERE id = ?"), (user_id,))
+    cursor.execute(qry("SELECT id, username, avatar_color, avatar_url, custom_status, created_at FROM users WHERE id = ?"), (user_id,))
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
@@ -307,7 +324,7 @@ def get_server_members(server_id):
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute(qry("""
-        SELECT u.id, u.username, u.avatar_color
+        SELECT u.id, u.username, u.avatar_color, u.avatar_url, u.custom_status
         FROM users u
         JOIN server_members sm ON u.id = sm.user_id
         WHERE sm.server_id = ?
