@@ -8,7 +8,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, stat
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
-from typing import Dict, List, Set, Any
+from typing import Dict, List, Set, Any, Optional
 
 from backend.database import (
     init_db, create_user, get_user_by_username, get_user_by_id,
