@@ -42,6 +42,24 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
+    # FORÇAR LIMPEZA E RESET DO BANCO DE DADOS (SERÁ REMOVIDO APÓS O DEPLOY)
+    try:
+        if IS_POSTGRES:
+            cursor.execute("DROP TABLE IF EXISTS messages CASCADE;")
+            cursor.execute("DROP TABLE IF EXISTS server_members CASCADE;")
+            cursor.execute("DROP TABLE IF EXISTS channels CASCADE;")
+            cursor.execute("DROP TABLE IF EXISTS servers CASCADE;")
+            cursor.execute("DROP TABLE IF EXISTS users CASCADE;")
+        else:
+            cursor.execute("DROP TABLE IF EXISTS messages;")
+            cursor.execute("DROP TABLE IF EXISTS server_members;")
+            cursor.execute("DROP TABLE IF EXISTS channels;")
+            cursor.execute("DROP TABLE IF EXISTS servers;")
+            cursor.execute("DROP TABLE IF EXISTS users;")
+        print("Tabelas antigas excluídas com sucesso. Recriando banco limpo...")
+    except Exception as e:
+        print("Aviso ao limpar tabelas antigas:", e)
+        
     if IS_POSTGRES:
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (

@@ -132,31 +132,45 @@ def get_current_user_from_header(token: str):
 
 @app.post("/api/auth/register")
 def register(data: RegisterModel):
-    # Cores aleatórias bonitas para avatares (Paleta Discord)
+    username = data.username.strip().lower()
+    if not username:
+        raise HTTPException(status_code=400, detail="Nome de usuário não pode estar vazio.")
+        
+    if len(username) < 3 or len(username) > 20:
+        raise HTTPException(status_code=400, detail="O nome de usuário para login deve ter entre 3 e 20 caracteres.")
+        
+    # Verificar caracteres válidos (apenas letras, números ou sublinhados)
+    import re
+    if not re.match("^[a-zA-Z0-9_]+$", username):
+        raise HTTPException(status_code=400, detail="O nome de usuário de login deve conter apenas letras, números ou sublinhados (_).")
+        
+    if len(data.password) < 4:
+        raise HTTPException(status_code=400, detail="A senha deve ter no mínimo 4 caracteres.")
+
     colors = ["#5865F2", "#57F287", "#FEE75C", "#EB459E", "#ED4245"]
     import random
     avatar_color = random.choice(colors)
     
     hashed = hash_password(data.password)
-    user_id = create_user(data.username, hashed, avatar_color)
+    user_id = create_user(username, hashed, avatar_color)
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Nome de usuário já cadastrado."
+            detail="Nome de usuário de login já cadastrado."
         )
     
-    # Adicionar o usuário ao servidor padrão automaticamente (ou cria o servidor se for o primeiro)
     add_user_to_default_server(user_id)
     
-    token = create_access_token(user_id, data.username)
+    token = create_access_token(user_id, username)
     return {
         "token": token,
-        "user": {"id": user_id, "username": data.username, "display_name": None, "avatar_color": avatar_color, "avatar_url": None, "custom_status": None}
+        "user": {"id": user_id, "username": username, "display_name": None, "avatar_color": avatar_color, "avatar_url": None, "custom_status": None}
     }
 
 @app.post("/api/auth/login")
 def login(data: LoginModel):
-    user = get_user_by_username(data.username)
+    username = data.username.strip().lower()
+    user = get_user_by_username(username)
     if not user or not verify_password(data.password, user["password_hash"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
