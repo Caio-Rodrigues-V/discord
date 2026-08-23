@@ -345,11 +345,17 @@ def list_dms(token: str = Query(...)):
 
 @app.post("/api/dms")
 def create_dm(data: CreateDMModel, token: str = Query(...)):
-    user = get_current_user_from_header(token)
-    dm_id = get_or_create_dm_channel(user["user_id"], data.recipient_id)
-    if not dm_id:
-        raise HTTPException(status_code=400, detail="Não foi possível criar o canal de DM.")
-    return {"dm_channel_id": dm_id}
+    try:
+        user = get_current_user_from_header(token)
+        dm_id = get_or_create_dm_channel(user["user_id"], data.recipient_id)
+        if not dm_id:
+            raise HTTPException(status_code=400, detail="Não foi possível criar o canal de DM.")
+        return {"dm_channel_id": dm_id}
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print("Erro em POST /api/dms:", tb)
+        raise HTTPException(status_code=500, detail=f"Erro interno no servidor: {str(e)}\n{tb}")
 
 @app.get("/api/dms/{dm_channel_id}/messages")
 def list_dm_messages(dm_channel_id: int, token: str = Query(...)):
