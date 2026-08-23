@@ -197,7 +197,7 @@ async def update_profile(data: UpdateProfileModel, token: str = Query(...)):
     
     try:
         if data.username and data.username != user["username"]:
-            cursor.execute(qry("SELECT id FROM users WHERE username = ?"), (data.username,))
+            cursor.execute(qry("SELECT id FROM users WHERE username = ? AND id != ?"), (data.username, user["user_id"]))
             if cursor.fetchone():
                 raise HTTPException(status_code=400, detail="Nome de usuário já está em uso.")
             cursor.execute(qry("UPDATE users SET username = ? WHERE id = ?"), (data.username, user["user_id"]))
